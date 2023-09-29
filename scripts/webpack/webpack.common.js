@@ -37,13 +37,15 @@ console.log(path.resolve());
 module.exports = {
   target: 'web',
   entry: {
-    app: './public/app/index.ts',
+      paneldemo: './public/paneldemo/entrypoint.ts',
   },
   output: {
     path: path.resolve(__dirname, '../../public/build'),
     filename: '[name].[hash].js',
     // Keep publicPath relative for host.com/grafana/ deployments
     publicPath: 'public/build/',
+    libraryTarget: "commonjs",
+    library: "Grafana",
   },
   resolve: {
     extensions: ['.ts', '.tsx', '.es6', '.js', '.json', '.svg'],
