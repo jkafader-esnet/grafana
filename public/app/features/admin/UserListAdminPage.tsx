@@ -1,29 +1,45 @@
-import React, { useEffect } from 'react';
-import { css, cx } from '@emotion/css';
-import { hot } from 'react-hot-loader';
+import { css } from '@emotion/css';
+import React, { ComponentType, useEffect } from 'react';
 import { connect, ConnectedProps } from 'react-redux';
-import { Pagination, Tooltip, stylesFactory, LinkButton, Icon } from '@grafana/ui';
-import { AccessControlAction, StoreState, UserDTO } from '../../types';
-import Page from 'app/core/components/Page/Page';
-import { getNavModel } from '../../core/selectors/navModel';
-import { fetchUsers, changeQuery, changePage } from './state/actions';
-import { TagBadge } from 'app/core/components/TagFilter/TagBadge';
+
+import { GrafanaTheme2 } from '@grafana/data';
+import { selectors as e2eSelectors } from '@grafana/e2e-selectors/src';
+import { LinkButton, RadioButtonGroup, useStyles2, FilterInput } from '@grafana/ui';
+import { Page } from 'app/core/components/Page/Page';
 import { contextSrv } from 'app/core/core';
-import { FilterInput } from 'app/core/components/FilterInput/FilterInput';
+
+import { AccessControlAction, StoreState, UserFilter } from '../../types';
+
+import { UsersTable } from './Users/UsersTable';
+import { changeFilter, changePage, changeQuery, changeSort, fetchUsers } from './state/actions';
+
+export interface FilterProps {
+  filters: UserFilter[];
+  onChange: (filter: UserFilter) => void;
+  className?: string;
+}
+const extraFilters: Array<ComponentType<FilterProps>> = [];
+export const addExtraFilters = (filter: ComponentType<FilterProps>) => {
+  extraFilters.push(filter);
+};
+
+const selectors = e2eSelectors.pages.UserListPage.UserListAdminPage;
 
 const mapDispatchToProps = {
   fetchUsers,
   changeQuery,
   changePage,
+  changeFilter,
+  changeSort,
 };
 
 const mapStateToProps = (state: StoreState) => ({
-  navModel: getNavModel(state.navIndex, 'global-users'),
   users: state.userListAdmin.users,
   query: state.userListAdmin.query,
   showPaging: state.userListAdmin.showPaging,
   totalPages: state.userListAdmin.totalPages,
   page: state.userListAdmin.page,
+  filters: state.userListAdmin.filters,
 });
 
 const connector = connect(mapStateToProps, mapDispatchToProps);
@@ -32,114 +48,107 @@ interface OwnProps {}
 
 type Props = OwnProps & ConnectedProps<typeof connector>;
 
-const UserListAdminPageUnConnected: React.FC<Props> = (props) => {
-  const styles = getStyles();
-  const { fetchUsers, navModel, query, changeQuery, users, showPaging, totalPages, page, changePage } = props;
+const UserListAdminPageUnConnected = ({
+  fetchUsers,
+  query,
+  changeQuery,
+  users,
+  showPaging,
+  changeFilter,
+  filters,
+  totalPages,
+  page,
+  changePage,
+  changeSort,
+}: Props) => {
+  const styles = useStyles2(getStyles);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
   return (
-    <Page navModel={navModel}>
-      <Page.Contents>
-        <>
-          <div className="page-action-bar">
-            <div className="gf-form gf-form--grow">
-              <FilterInput
-                placeholder="Search user by login, email, or name."
-                autoFocus={true}
-                value={query}
-                onChange={(value) => changeQuery(value)}
-              />
-            </div>
-            {contextSrv.hasPermission(AccessControlAction.UsersCreate) && (
-              <LinkButton href="admin/users/create" variant="primary">
-                New user
-              </LinkButton>
-            )}
-          </div>
-          <div className={cx(styles.table, 'admin-list-table')}>
-            <table className="filter-table form-inline filter-table--hover">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Login</th>
-                  <th>Email</th>
-                  <th>Name</th>
-                  <th>
-                    Seen&nbsp;
-                    <Tooltip placement="top" content="Time since user was seen using Grafana">
-                      <Icon name="question-circle" />
-                    </Tooltip>
-                  </th>
-                  <th></th>
-                  <th style={{ width: '1%' }}></th>
-                </tr>
-              </thead>
-              <tbody>{users.map(renderUser)}</tbody>
-            </table>
-          </div>
-          {showPaging && <Pagination numberOfPages={totalPages} currentPage={page} onNavigate={changePage} />}
-        </>
-      </Page.Contents>
+    <Page.Contents>
+      <div className={styles.actionBar} data-testid={selectors.container}>
+        <div className={styles.row}>
+          <FilterInput
+            placeholder="Search user by login, email, or name."
+            autoFocus={true}
+            value={query}
+            onChange={changeQuery}
+          />
+          <RadioButtonGroup
+            options={[
+              { label: 'All users', value: false },
+              { label: 'Active last 30 days', value: true },
+            ]}
+            onChange={(value) => changeFilter({ name: 'activeLast30Days', value })}
+            value={filters.find((f) => f.name === 'activeLast30Days')?.value}
+            className={styles.filter}
+          />
+          {extraFilters.map((FilterComponent, index) => (
+            <FilterComponent key={index} filters={filters} onChange={changeFilter} className={styles.filter} />
+          ))}
+          {contextSrv.hasPermission(AccessControlAction.UsersCreate) && (
+            <LinkButton href="admin/users/create" variant="primary">
+              New user
+            </LinkButton>
+          )}
+        </div>
+      </div>
+      <UsersTable
+        users={users}
+        showPaging={showPaging}
+        totalPages={totalPages}
+        onChangePage={changePage}
+        currentPage={page}
+        fetchData={changeSort}
+      />
+    </Page.Contents>
+  );
+};
+
+export const UserListAdminPageContent = connector(UserListAdminPageUnConnected);
+
+export function UserListAdminPage() {
+  return (
+    <Page navId="global-users">
+      <UserListAdminPageContent />
     </Page>
   );
-};
+}
 
-const renderUser = (user: UserDTO) => {
-  const editUrl = `admin/users/edit/${user.id}`;
-
-  return (
-    <tr key={user.id}>
-      <td className="width-4 text-center link-td">
-        <a href={editUrl}>
-          <img className="filter-table__avatar" src={user.avatarUrl} />
-        </a>
-      </td>
-      <td className="link-td max-width-10">
-        <a className="ellipsis" href={editUrl} title={user.login}>
-          {user.login}
-        </a>
-      </td>
-      <td className="link-td max-width-10">
-        <a className="ellipsis" href={editUrl} title={user.email}>
-          {user.email}
-        </a>
-      </td>
-      <td className="link-td max-width-10">
-        <a className="ellipsis" href={editUrl} title={user.name}>
-          {user.name}
-        </a>
-      </td>
-      <td className="link-td">{user.lastSeenAtAge && <a href={editUrl}>{user.lastSeenAtAge}</a>}</td>
-      <td className="link-td">
-        {user.isAdmin && (
-          <a href={editUrl}>
-            <Tooltip placement="top" content="Grafana Admin">
-              <Icon name="shield" />
-            </Tooltip>
-          </a>
-        )}
-      </td>
-      <td className="text-right">
-        {Array.isArray(user.authLabels) && user.authLabels.length > 0 && (
-          <TagBadge label={user.authLabels[0]} removeIcon={false} count={0} />
-        )}
-      </td>
-      <td className="text-right">
-        {user.isDisabled && <span className="label label-tag label-tag--gray">Disabled</span>}
-      </td>
-    </tr>
-  );
-};
-
-const getStyles = stylesFactory(() => {
+const getStyles = (theme: GrafanaTheme2) => {
   return {
-    table: css`
-      margin-top: 28px;
-    `,
-  };
-});
+    filter: css({
+      margin: theme.spacing(0, 1),
+      [theme.breakpoints.down('sm')]: {
+        margin: 0,
+      },
+    }),
+    actionBar: css({
+      marginBottom: theme.spacing(2),
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: theme.spacing(2),
+      [theme.breakpoints.down('sm')]: {
+        flexWrap: 'wrap',
+      },
+    }),
+    row: css({
+      display: 'flex',
+      alignItems: 'flex-start',
+      textAlign: 'left',
+      marginBottom: theme.spacing(0.5),
+      flexGrow: 1,
 
-export default hot(module)(connector(UserListAdminPageUnConnected));
+      [theme.breakpoints.down('sm')]: {
+        flexWrap: 'wrap',
+        gap: theme.spacing(2),
+        width: '100%',
+      },
+    }),
+  };
+};
+
+export default UserListAdminPage;

@@ -1,8 +1,9 @@
+import { debounce, DebouncedFuncLeading, isNil } from 'lodash';
 import React, { Component } from 'react';
-import { debounce, isNil } from 'lodash';
-import { AsyncSelect } from '@grafana/ui';
+
 import { SelectableValue } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
+import { AsyncSelect } from '@grafana/ui';
 import { Team } from 'app/types';
 
 export interface Props {
@@ -15,7 +16,7 @@ export interface State {
 }
 
 export class TeamPicker extends Component<Props, State> {
-  debouncedSearch: any;
+  debouncedSearch: DebouncedFuncLeading<typeof this.search>;
 
   constructor(props: Props) {
     super(props);
@@ -64,6 +65,7 @@ export class TeamPicker extends Component<Props, State> {
           className={className}
           placeholder="Select a team"
           noOptionsMessage="No teams found"
+          aria-label="Team picker"
         />
       </div>
     );

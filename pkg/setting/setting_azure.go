@@ -1,62 +1,67 @@
 package setting
 
-import "strings"
-
-const (
-	AzurePublic       = "AzureCloud"
-	AzureChina        = "AzureChinaCloud"
-	AzureUSGovernment = "AzureUSGovernment"
-	AzureGermany      = "AzureGermanCloud"
+import (
+	"github.com/grafana/grafana-azure-sdk-go/azsettings"
 )
 
-type AzureSettings struct {
-	Cloud                   string
-	ManagedIdentityEnabled  bool
-	ManagedIdentityClientId string
-}
-
 func (cfg *Cfg) readAzureSettings() {
+	azureSettings := &azsettings.AzureSettings{}
+
 	azureSection := cfg.Raw.Section("azure")
 
 	// Cloud
-	cloudName := azureSection.Key("cloud").MustString(AzurePublic)
-	cfg.Azure.Cloud = normalizeAzureCloud(cloudName)
+	cloudName := azureSection.Key("cloud").MustString(azsettings.AzurePublic)
+	azureSettings.Cloud = azsettings.NormalizeAzureCloud(cloudName)
 
-	// Managed Identity
-	cfg.Azure.ManagedIdentityEnabled = azureSection.Key("managed_identity_enabled").MustBool(false)
-	cfg.Azure.ManagedIdentityClientId = azureSection.Key("managed_identity_client_id").String()
-}
+	// Managed Identity authentication
+	azureSettings.ManagedIdentityEnabled = azureSection.Key("managed_identity_enabled").MustBool(false)
+	azureSettings.ManagedIdentityClientId = azureSection.Key("managed_identity_client_id").String()
 
-func normalizeAzureCloud(cloudName string) string {
-	switch strings.ToLower(cloudName) {
-	// Public
-	case "azurecloud":
-	case "azurepublic":
-	case "azurepubliccloud":
-	case "public":
-		return AzurePublic
+	// Workload Identity authentication
+	if azureSection.Key("workload_identity_enabled").MustBool(false) {
+		azureSettings.WorkloadIdentityEnabled = true
+		workloadIdentitySettings := &azsettings.WorkloadIdentitySettings{}
 
-	// China
-	case "azurechina":
-	case "azurechinacloud":
-	case "china":
-		return AzureChina
+		if val := azureSection.Key("workload_identity_tenant_id").String(); val != "" {
+			workloadIdentitySettings.TenantId = val
+		}
+		if val := azureSection.Key("workload_identity_client_id").String(); val != "" {
+			workloadIdentitySettings.ClientId = val
+		}
+		if val := azureSection.Key("workload_identity_token_file").String(); val != "" {
+			workloadIdentitySettings.TokenFile = val
+		}
 
-	// US Government
-	case "azureusgovernment":
-	case "azureusgovernmentcloud":
-	case "usgov":
-	case "usgovernment":
-		return AzureUSGovernment
-
-	// Germany
-	case "azuregermancloud":
-	case "azuregermany":
-	case "german":
-	case "germany":
-		return AzureGermany
+		azureSettings.WorkloadIdentitySettings = workloadIdentitySettings
 	}
 
-	// Pass the name unchanged if it's not known
-	return cloudName
+	// User Identity authentication
+	if azureSection.Key("user_identity_enabled").MustBool(false) {
+		azureSettings.UserIdentityEnabled = true
+		tokenEndpointSettings := &azsettings.TokenEndpointSettings{}
+
+		// Get token endpoint from Azure AD settings if enabled
+		azureAdSection := cfg.Raw.Section("auth.azuread")
+		if azureAdSection.Key("enabled").MustBool(false) {
+			tokenEndpointSettings.TokenUrl = azureAdSection.Key("token_url").String()
+			tokenEndpointSettings.ClientId = azureAdSection.Key("client_id").String()
+			tokenEndpointSettings.ClientSecret = azureAdSection.Key("client_secret").String()
+		}
+
+		// Override individual settings
+		if val := azureSection.Key("user_identity_token_url").String(); val != "" {
+			tokenEndpointSettings.TokenUrl = val
+		}
+		if val := azureSection.Key("user_identity_client_id").String(); val != "" {
+			tokenEndpointSettings.ClientId = val
+			tokenEndpointSettings.ClientSecret = ""
+		}
+		if val := azureSection.Key("user_identity_client_secret").String(); val != "" {
+			tokenEndpointSettings.ClientSecret = val
+		}
+
+		azureSettings.UserIdentityTokenEndpoint = tokenEndpointSettings
+	}
+
+	cfg.Azure = azureSettings
 }

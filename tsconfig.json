@@ -3,16 +3,17 @@
     "jsx": "react",
     "baseUrl": "public/",
     "outDir": "public/dist",
-    "paths": {
-      "@grafana/slate-react": ["../node_modules/@types/slate-react"],
-      "app": ["app/"],
-      "sass": ["sass/"]
-    },
     "rootDirs": ["public/"],
-    "typeRoots": ["node_modules/@types", "public/app/types"],
     "allowJs": true,
-    "strictNullChecks": true,
-    "resolveJsonModule": true
+    "strict": true,
+    "resolveJsonModule": true,
+    "useUnknownInCatchVariables": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.tsbuildinfo",
+    "preserveSymlinks": true,
+    "paths": {
+      "@grafana/schema/dist/esm/*": ["../packages/grafana-schema/src/*"]
+    }
   },
   "extends": "@grafana/tsconfig/base.json",
   "include": [
@@ -20,7 +21,7 @@
     "public/e2e-test/**/*.ts",
     "public/test/**/*.ts",
     "public/vendor/**/*.ts",
-    "packages/jaeger-ui-components/typings",
-    "packages/grafana-data/typings"
+    "packages/grafana-data/typings",
+    "packages/grafana-ui/src/types"
   ]
 }

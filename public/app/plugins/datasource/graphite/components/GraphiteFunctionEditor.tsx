@@ -1,22 +1,26 @@
-import React, { useState } from 'react';
-import { HorizontalGroup, InlineLabel, useStyles2 } from '@grafana/ui';
-import { GrafanaTheme2 } from '@grafana/data';
 import { css, cx } from '@emotion/css';
+import React, { useState } from 'react';
+
+import { GrafanaTheme2 } from '@grafana/data';
+import { HorizontalGroup, InlineLabel, useStyles2 } from '@grafana/ui';
+
 import { FuncInstance } from '../gfunc';
-import { EditableParam, FunctionParamEditor } from './FunctionParamEditor';
 import { actions } from '../state/actions';
-import { FunctionEditor } from '../FunctionEditor';
+import { useDispatch } from '../state/context';
+
+import { FunctionEditor } from './FunctionEditor';
+import { EditableParam, FunctionParamEditor } from './FunctionParamEditor';
 import { mapFuncInstanceToParams } from './helpers';
 
 export type FunctionEditorProps = {
   func: FuncInstance;
-  dispatch: (action: any) => void;
 };
 
 /**
  * Allows editing function params and removing/moving a function (note: editing function name is not supported)
  */
-export function GraphiteFunctionEditor({ func, dispatch }: FunctionEditorProps) {
+export function GraphiteFunctionEditor({ func }: FunctionEditorProps) {
+  const dispatch = useDispatch();
   const styles = useStyles2(getStyles);
 
   // keep track of mouse over and isExpanded state to display buttons for adding optional/multiple params
@@ -33,8 +37,10 @@ export function GraphiteFunctionEditor({ func, dispatch }: FunctionEditorProps) 
   return (
     <div
       className={cx(styles.container, { [styles.error]: func.def.unknown })}
+      onBlur={() => setIsMouseOver(false)}
+      onFocus={() => setIsMouseOver(true)}
       onMouseOver={() => setIsMouseOver(true)}
-      onMouseLeave={() => setIsMouseOver(false)}
+      onMouseOut={() => setIsMouseOver(false)}
     >
       <HorizontalGroup spacing="none">
         <FunctionEditor
@@ -78,9 +84,10 @@ export function GraphiteFunctionEditor({ func, dispatch }: FunctionEditorProps) 
 const getStyles = (theme: GrafanaTheme2) => ({
   container: css({
     backgroundColor: theme.colors.background.secondary,
-    borderRadius: theme.shape.borderRadius(),
+    borderRadius: theme.shape.radius.default,
     marginRight: theme.spacing(0.5),
     padding: `0 ${theme.spacing(1)}`,
+    height: `${theme.v1.spacing.formInputHeight}px`,
   }),
   error: css`
     border: 1px solid ${theme.colors.error.main};

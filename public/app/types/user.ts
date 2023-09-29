@@ -1,6 +1,7 @@
-import { OrgRole } from '.';
+import { SelectableValue, WithAccessControlMetadata } from '@grafana/data';
 
-export interface OrgUser {
+import { OrgRole } from '.';
+export interface OrgUser extends WithAccessControlMetadata {
   avatarUrl: string;
   email: string;
   lastSeenAt: string;
@@ -10,6 +11,9 @@ export interface OrgUser {
   orgId: number;
   role: OrgRole;
   userId: number;
+  isDisabled: boolean;
+  authLabels?: string[];
+  isExternallySynced?: boolean;
 }
 
 export interface User {
@@ -22,7 +26,9 @@ export interface User {
   orgId?: number;
 }
 
-export interface UserDTO {
+export type Unit = { name: string; url: string };
+
+export interface UserDTO extends WithAccessControlMetadata {
   id: number;
   login: string;
   email: string;
@@ -36,7 +42,14 @@ export interface UserDTO {
   theme?: string;
   avatarUrl?: string;
   orgId?: number;
+  lastSeenAt?: string;
   lastSeenAtAge?: string;
+  licensedRole?: string;
+  permissions?: string[];
+  teams?: Unit[];
+  orgs?: Unit[];
+  isExternallySynced?: boolean;
+  isGrafanaAdminExternallySynced?: boolean;
 }
 
 export interface Invitee {
@@ -58,14 +71,16 @@ export interface Invitee {
 
 export interface UsersState {
   users: OrgUser[];
-  invitees: Invitee[];
   searchQuery: string;
-  searchPage: number;
   canInvite: boolean;
   externalUserMngLinkUrl: string;
   externalUserMngLinkName: string;
   externalUserMngInfo: string;
-  hasFetched: boolean;
+  isLoading: boolean;
+  page: number;
+  perPage: number;
+  totalPages: number;
+  sort?: string;
 }
 
 export interface UserSession {
@@ -100,6 +115,7 @@ export interface UserAdminError {
   body: string;
 }
 
+export type UserFilter = Record<string, string | boolean | SelectableValue[]>;
 export interface UserListAdminState {
   users: UserDTO[];
   query: string;
@@ -107,4 +123,7 @@ export interface UserListAdminState {
   page: number;
   totalPages: number;
   showPaging: boolean;
+  filters: UserFilter[];
+  isLoading: boolean;
+  sort?: string;
 }

@@ -1,6 +1,9 @@
 import React, { PureComponent, ReactNode, ComponentType } from 'react';
-import { captureException } from '@sentry/browser';
+
+import { faro } from '@grafana/faro-web-sdk';
+
 import { Alert } from '../Alert/Alert';
+
 import { ErrorWithStack } from './ErrorWithStack';
 
 export interface ErrorInfo {
@@ -14,6 +17,12 @@ export interface ErrorBoundaryApi {
 
 interface Props {
   children: (r: ErrorBoundaryApi) => ReactNode;
+  /** Will re-render children after error if recover values changes */
+  dependencies?: unknown[];
+  /** Callback called on error */
+  onError?: (error: Error) => void;
+  /** Callback error state is cleared due to recover props change */
+  onRecover?: () => void;
 }
 
 interface State {
@@ -28,11 +37,30 @@ export class ErrorBoundary extends PureComponent<Props, State> {
   };
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
-    this.setState({
-      error: error,
-      errorInfo: errorInfo,
-    });
+    faro?.api?.pushError(error);
+    this.setState({ error, errorInfo });
+
+    if (this.props.onError) {
+      this.props.onError(error);
+    }
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    const { dependencies, onRecover } = this.props;
+
+    if (this.state.error) {
+      if (dependencies && prevProps.dependencies) {
+        for (let i = 0; i < dependencies.length; i++) {
+          if (dependencies[i] !== prevProps.dependencies[i]) {
+            this.setState({ error: null, errorInfo: null });
+            if (onRecover) {
+              onRecover();
+            }
+            break;
+          }
+        }
+      }
+    }
   }
 
   render() {
@@ -60,6 +88,9 @@ export interface ErrorBoundaryAlertProps {
 
   /** 'page' will render full page error with stacktrace. 'alertbox' will render an <Alert />. Default 'alertbox' */
   style?: 'page' | 'alertbox';
+
+  /** Will re-render children after error if recover values changes */
+  dependencies?: unknown[];
 }
 
 export class ErrorBoundaryAlert extends PureComponent<ErrorBoundaryAlertProps> {
@@ -69,10 +100,10 @@ export class ErrorBoundaryAlert extends PureComponent<ErrorBoundaryAlertProps> {
   };
 
   render() {
-    const { title, children, style } = this.props;
+    const { title, children, style, dependencies } = this.props;
 
     return (
-      <ErrorBoundary>
+      <ErrorBoundary dependencies={dependencies}>
         {({ error, errorInfo }) => {
           if (!errorInfo) {
             return children;
@@ -105,7 +136,7 @@ export class ErrorBoundaryAlert extends PureComponent<ErrorBoundaryAlertProps> {
  *
  * @public
  */
-export function withErrorBoundary<P = {}>(
+export function withErrorBoundary<P extends {} = {}>(
   Component: ComponentType<P>,
   errorBoundaryProps: Omit<ErrorBoundaryAlertProps, 'children'> = {}
 ): ComponentType<P> {

@@ -4,12 +4,13 @@ import {
   FieldCache,
   FieldColorModeId,
   Field,
-  getColorForTheme,
   applyFieldOverrides,
   createTheme,
   DataFrame,
 } from '@grafana/data';
+
 import { getTheme } from '../../themes';
+
 import { getMultiSeriesGraphHoverInfo, findHoverIndexFromData, graphTimeFormat } from './utils';
 
 const mockResult = (
@@ -45,11 +46,11 @@ function passThroughFieldOverrides(frame: DataFrame) {
 const aSeries = passThroughFieldOverrides(
   toDataFrame({
     fields: [
-      { name: 'time', type: FieldType.time, values: [10000, 20000, 30000] },
+      { name: 'time', type: FieldType.time, values: [10000, 20000, 30000, 80000] },
       {
         name: 'value',
         type: FieldType.number,
-        values: [10, 20, 10],
+        values: [10, 20, 10, 25],
         config: { color: { mode: FieldColorModeId.Fixed, fixedColor: 'red' } },
       },
     ],
@@ -59,11 +60,11 @@ const aSeries = passThroughFieldOverrides(
 const bSeries = passThroughFieldOverrides(
   toDataFrame({
     fields: [
-      { name: 'time', type: FieldType.time, values: [10000, 20000, 30000] },
+      { name: 'time', type: FieldType.time, values: [10000, 20000, 30000, 80000] },
       {
         name: 'value',
         type: FieldType.number,
-        values: [30, 60, 30],
+        values: [30, 60, 30, 40],
         config: { color: { mode: FieldColorModeId.Fixed, fixedColor: 'blue' } },
       },
     ],
@@ -74,11 +75,11 @@ const bSeries = passThroughFieldOverrides(
 const cSeries = passThroughFieldOverrides(
   toDataFrame({
     fields: [
-      { name: 'time', type: FieldType.time, values: [10000, 30000] },
+      { name: 'time', type: FieldType.time, values: [10000, 30000, 80000] },
       {
         name: 'value',
         type: FieldType.number,
-        values: [30, 30],
+        values: [30, 30, 30],
         config: { color: { mode: FieldColorModeId.Fixed, fixedColor: 'yellow' } },
       },
     ],
@@ -86,7 +87,7 @@ const cSeries = passThroughFieldOverrides(
 )[0];
 
 function getFixedThemedColor(field: Field): string {
-  return getColorForTheme(field.config.color!.fixedColor!, getTheme());
+  return getTheme().visualization.getColorByName(field.config.color!.fixedColor!);
 }
 
 describe('Graph utils', () => {

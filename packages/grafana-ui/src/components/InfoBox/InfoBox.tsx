@@ -1,9 +1,11 @@
-import React from 'react';
 import { css, cx } from '@emotion/css';
+import React from 'react';
+
 import { GrafanaTheme2 } from '@grafana/data';
-import { Icon } from '../Icon/Icon';
-import { Alert, AlertVariant } from '../Alert/Alert';
+
 import { stylesFactory, useStyles2 } from '../../themes';
+import { Alert, AlertVariant } from '../Alert/Alert';
+import { Icon } from '../Icon/Icon';
 
 export interface InfoBoxProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   children: React.ReactNode;
@@ -45,9 +47,9 @@ InfoBox.displayName = 'InfoBox';
 
 const getStyles = stylesFactory((theme: GrafanaTheme2) => {
   return {
-    docsLink: css`
-      display: inline-block;
-      margin-top: ${theme.spacing(2)};
-    `,
+    docsLink: css({
+      display: 'inline-block',
+      marginTop: theme.spacing(2),
+    }),
   };
 });

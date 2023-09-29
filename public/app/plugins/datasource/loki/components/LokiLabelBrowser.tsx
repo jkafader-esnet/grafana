@@ -1,4 +1,10 @@
+import { css, cx } from '@emotion/css';
+import { sortBy } from 'lodash';
 import React, { ChangeEvent } from 'react';
+import { FixedSizeList } from 'react-window';
+
+import { CoreApp, GrafanaTheme2 } from '@grafana/data';
+import { reportInteraction } from '@grafana/runtime';
 import {
   Button,
   HighlightPart,
@@ -10,13 +16,10 @@ import {
   BrowserLabel as LokiLabel,
   fuzzyMatch,
 } from '@grafana/ui';
-import LokiLanguageProvider from '../language_provider';
+
 import PromQlLanguageProvider from '../../prometheus/language_provider';
-import { css, cx } from '@emotion/css';
-import store from 'app/core/store';
-import { FixedSizeList } from 'react-window';
-import { GrafanaTheme2 } from '@grafana/data';
-import { sortBy } from 'lodash';
+import LokiLanguageProvider from '../LanguageProvider';
+import { escapeLabelValueInExactSelector, escapeLabelValueInRegexSelector } from '../languageUtils';
 
 // Hard limit on labels to render
 const MAX_LABEL_COUNT = 1000;
@@ -24,15 +27,17 @@ const MAX_VALUE_COUNT = 10000;
 const MAX_AUTO_SELECT = 4;
 const EMPTY_SELECTOR = '{}';
 
-export const LAST_USED_LABELS_KEY = 'grafana.datasources.loki.browser.labels';
-
 export interface BrowserProps {
   // TODO #33976: Is it possible to use a common interface here? For example: LabelsLanguageProvider
   languageProvider: LokiLanguageProvider | PromQlLanguageProvider;
   onChange: (selector: string) => void;
   theme: GrafanaTheme2;
+  app?: CoreApp;
   autoSelect?: number;
   hide?: () => void;
+  lastUsedLabels: string[];
+  storeLastUsedLabels: (labels: string[]) => void;
+  deleteLastUsedLabels: () => void;
 }
 
 interface BrowserState {
@@ -65,9 +70,9 @@ export function buildSelector(labels: SelectableLabel[]): string {
     if (label.selected && label.values && label.values.length > 0) {
       const selectedValues = label.values.filter((value) => value.selected).map((value) => value.name);
       if (selectedValues.length > 1) {
-        selectedLabels.push(`${label.name}=~"${selectedValues.join('|')}"`);
+        selectedLabels.push(`${label.name}=~"${selectedValues.map(escapeLabelValueInRegexSelector).join('|')}"`);
       } else if (selectedValues.length === 1) {
-        selectedLabels.push(`${label.name}="${selectedValues[0]}"`);
+        selectedLabels.push(`${label.name}="${escapeLabelValueInExactSelector(selectedValues[0])}"`);
       }
     }
   }
@@ -105,8 +110,10 @@ export function facetLabels(
 const getStyles = (theme: GrafanaTheme2) => ({
   wrapper: css`
     background-color: ${theme.colors.background.secondary};
-    padding: ${theme.spacing(2)};
     width: 100%;
+  `,
+  wrapperPadding: css`
+    padding: ${theme.spacing(2)};
   `,
   list: css`
     margin-top: ${theme.spacing(1)};
@@ -119,25 +126,31 @@ const getStyles = (theme: GrafanaTheme2) => ({
     & + & {
       margin: ${theme.spacing(2, 0)};
     }
+
     position: relative;
+  `,
+  footerSectionStyles: css`
+    padding: ${theme.spacing(1)};
+    background-color: ${theme.colors.background.primary};
+    position: sticky;
+    bottom: -${theme.spacing(3)}; /* offset the padding on modal */
+    left: 0;
   `,
   selector: css`
     font-family: ${theme.typography.fontFamilyMonospace};
     margin-bottom: ${theme.spacing(1)};
+    width: 100%;
   `,
   status: css`
-    padding: ${theme.spacing(0.5)};
+    margin-bottom: ${theme.spacing(1)};
     color: ${theme.colors.text.secondary};
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* using absolute positioning because flex interferes with ellipsis */
-    position: absolute;
-    width: 50%;
-    right: 0;
-    text-align: right;
     transition: opacity 100ms linear;
     opacity: 0;
+    font-size: ${theme.typography.bodySmall.fontSize};
+    height: calc(${theme.typography.bodySmall.fontSize} + 10px);
   `,
   statusShowing: css`
     opacity: 1;
@@ -147,6 +160,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
   `,
   valueList: css`
     margin-right: ${theme.spacing(1)};
+    resize: horizontal;
   `,
   valueListWrapper: css`
     border-left: 1px solid ${theme.colors.border.medium};
@@ -186,13 +200,21 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
   };
 
   onClickRunLogsQuery = () => {
+    reportInteraction('grafana_loki_label_browser_closed', {
+      app: this.props.app,
+      closeType: 'showLogsButton',
+    });
     const selector = buildSelector(this.state.labels);
     this.props.onChange(selector);
   };
 
   onClickRunMetricsQuery = () => {
+    reportInteraction('grafana_loki_label_browser_closed', {
+      app: this.props.app,
+      closeType: 'showLogsRateButton',
+    });
     const selector = buildSelector(this.state.labels);
-    const query = `rate(${selector}[$__interval])`;
+    const query = `rate(${selector}[$__auto])`;
     this.props.onChange(query);
   };
 
@@ -208,7 +230,7 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
       }));
       return { labels, searchTerm: '', status: '', error: '', validationStatus: '' };
     });
-    store.delete(LAST_USED_LABELS_KEY);
+    this.props.deleteLastUsedLabels();
   };
 
   onClickLabel = (name: string, value: string | undefined, event: React.MouseEvent<HTMLElement>) => {
@@ -261,9 +283,9 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
   }
 
   componentDidMount() {
-    const { languageProvider, autoSelect = MAX_AUTO_SELECT } = this.props;
+    const { languageProvider, autoSelect = MAX_AUTO_SELECT, lastUsedLabels } = this.props;
     if (languageProvider) {
-      const selectedLabels: string[] = store.getObject(LAST_USED_LABELS_KEY, []);
+      const selectedLabels: string[] = lastUsedLabels;
       languageProvider.start().then(() => {
         let rawLabels: string[] = languageProvider.getLabelKeys();
         if (rawLabels.length > MAX_LABEL_COUNT) {
@@ -295,7 +317,7 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
       return;
     }
     const selectedLabels = this.state.labels.filter((label) => label.selected).map((label) => label.name);
-    store.setObject(LAST_USED_LABELS_KEY, selectedLabels);
+    this.props.storeLastUsedLabels(selectedLabels);
     if (label.selected) {
       // Refetch values for newly selected label...
       if (!label.values) {
@@ -349,7 +371,7 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
   async fetchSeries(selector: string, lastFacetted?: string) {
     const { languageProvider } = this.props;
     if (lastFacetted) {
-      this.updateLabelState(lastFacetted, { loading: true }, `Facetting labels for ${selector}`);
+      this.updateLabelState(lastFacetted, { loading: true }, `Loading labels for ${selector}`);
     }
     try {
       const possibleLabels = await languageProvider.fetchSeriesLabels(selector, true);
@@ -361,9 +383,7 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
         return;
       }
       if (Object.keys(possibleLabels).length === 0) {
-        // Sometimes the backend does not return a valid set
-        console.error('No results for label combination, but should not occur.');
-        this.setState({ error: `Facetting failed for ${selector}` });
+        this.setState({ error: `Empty results, no matching label for ${selector}` });
         return;
       }
       const labels: SelectableLabel[] = facetLabels(this.state.labels, possibleLabels, lastFacetted);
@@ -427,83 +447,93 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
     }
 
     return (
-      <div className={styles.wrapper}>
-        <div className={styles.section}>
-          <Label description="Which labels would you like to consider for your search?">
-            1. Select labels to search in
-          </Label>
-          <div className={styles.list}>
-            {labels.map((label) => (
-              <LokiLabel
-                key={label.name}
-                name={label.name}
-                loading={label.loading}
-                active={label.selected}
-                hidden={label.hidden}
-                facets={label.facets}
-                onClick={this.onClickLabel}
+      <>
+        <div className={styles.wrapper}>
+          <div className={cx(styles.section, styles.wrapperPadding)}>
+            <Label description="Which labels would you like to consider for your search?">
+              1. Select labels to search in
+            </Label>
+            <div className={styles.list}>
+              {labels.map((label) => (
+                <LokiLabel
+                  key={label.name}
+                  name={label.name}
+                  loading={label.loading}
+                  active={label.selected}
+                  hidden={label.hidden}
+                  facets={label.facets}
+                  onClick={this.onClickLabel}
+                />
+              ))}
+            </div>
+          </div>
+          <div className={cx(styles.section, styles.wrapperPadding)}>
+            <Label description="Choose the label values that you would like to use for the query. Use the search field to find values across selected labels.">
+              2. Find values for the selected labels
+            </Label>
+            <div>
+              <Input
+                onChange={this.onChangeSearch}
+                aria-label="Filter expression for values"
+                value={searchTerm}
+                placeholder={'Enter a label value'}
               />
-            ))}
-          </div>
-        </div>
-        <div className={styles.section}>
-          <Label description="Choose the label values that you would like to use for the query. Use the search field to find values across selected labels.">
-            2. Find values for the selected labels
-          </Label>
-          <div>
-            <Input onChange={this.onChangeSearch} aria-label="Filter expression for values" value={searchTerm} />
-          </div>
-          <div className={styles.valueListArea}>
-            {selectedLabels.map((label) => (
-              <div role="list" key={label.name} className={styles.valueListWrapper}>
-                <div className={styles.valueTitle} aria-label={`Values for ${label.name}`}>
-                  <LokiLabel
-                    name={label.name}
-                    loading={label.loading}
-                    active={label.selected}
-                    hidden={label.hidden}
-                    //If no facets, we want to show number of all label values
-                    facets={label.facets || label.values?.length}
-                    onClick={this.onClickLabel}
-                  />
+            </div>
+            <div className={styles.valueListArea}>
+              {selectedLabels.map((label) => (
+                <div role="list" key={label.name} className={styles.valueListWrapper}>
+                  <div className={styles.valueTitle} aria-label={`Values for ${label.name}`}>
+                    <LokiLabel
+                      name={label.name}
+                      loading={label.loading}
+                      active={label.selected}
+                      hidden={label.hidden}
+                      //If no facets, we want to show number of all label values
+                      facets={label.facets || label.values?.length}
+                      onClick={this.onClickLabel}
+                    />
+                  </div>
+                  <FixedSizeList
+                    height={200}
+                    itemCount={label.values?.length || 0}
+                    itemSize={28}
+                    itemKey={(i) => (label.values as FacettableValue[])[i].name}
+                    width={200}
+                    className={styles.valueList}
+                  >
+                    {({ index, style }) => {
+                      const value = label.values?.[index];
+                      if (!value) {
+                        return null;
+                      }
+                      return (
+                        <div style={style}>
+                          <LokiLabel
+                            name={label.name}
+                            value={value?.name}
+                            active={value?.selected}
+                            highlightParts={value?.highlightParts}
+                            onClick={this.onClickValue}
+                            searchTerm={searchTerm}
+                          />
+                        </div>
+                      );
+                    }}
+                  </FixedSizeList>
                 </div>
-                <FixedSizeList
-                  height={200}
-                  itemCount={label.values?.length || 0}
-                  itemSize={28}
-                  itemKey={(i) => (label.values as FacettableValue[])[i].name}
-                  width={200}
-                  className={styles.valueList}
-                >
-                  {({ index, style }) => {
-                    const value = label.values?.[index];
-                    if (!value) {
-                      return null;
-                    }
-                    return (
-                      <div style={style}>
-                        <LokiLabel
-                          name={label.name}
-                          value={value?.name}
-                          active={value?.selected}
-                          highlightParts={value?.highlightParts}
-                          onClick={this.onClickValue}
-                          searchTerm={searchTerm}
-                        />
-                      </div>
-                    );
-                  }}
-                </FixedSizeList>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-        <div className={styles.section}>
+        <div className={styles.footerSectionStyles}>
           <Label>3. Resulting selector</Label>
-          <div aria-label="selector" className={styles.selector}>
+          <pre aria-label="selector" className={styles.selector}>
             {selector}
-          </div>
+          </pre>
           {validationStatus && <div className={styles.validationStatus}>{validationStatus}</div>}
+          <div className={cx(styles.status, (status || error) && styles.statusShowing)}>
+            <span className={error ? styles.error : ''}>{error || status}</span>
+          </div>
           <HorizontalGroup>
             <Button aria-label="Use selector as logs button" disabled={empty} onClick={this.onClickRunLogsQuery}>
               Show logs
@@ -527,12 +557,9 @@ export class UnthemedLokiLabelBrowser extends React.Component<BrowserProps, Brow
             <Button aria-label="Selector clear button" variant="secondary" onClick={this.onClickClear}>
               Clear
             </Button>
-            <div className={cx(styles.status, (status || error) && styles.statusShowing)}>
-              <span className={error ? styles.error : ''}>{error || status}</span>
-            </div>
           </HorizontalGroup>
         </div>
-      </div>
+      </>
     );
   }
 }

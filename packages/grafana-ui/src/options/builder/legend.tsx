@@ -1,6 +1,5 @@
 import { PanelOptionsEditorBuilder, standardEditorsRegistry, StatsPickerConfigSettings } from '@grafana/data';
-import { LegendDisplayMode } from '../../index';
-import { OptionsWithLegend } from '../models.gen';
+import { LegendDisplayMode, OptionsWithLegend } from '@grafana/schema';
 
 /**
  * @alpha
@@ -10,9 +9,16 @@ export function addLegendOptions<T extends OptionsWithLegend>(
   includeLegendCalcs = true
 ) {
   builder
+    .addBooleanSwitch({
+      path: 'legend.showLegend',
+      name: 'Visibility',
+      category: ['Legend'],
+      description: '',
+      defaultValue: true,
+    })
     .addRadio({
       path: 'legend.displayMode',
-      name: 'Legend mode',
+      name: 'Mode',
       category: ['Legend'],
       description: '',
       defaultValue: LegendDisplayMode.List,
@@ -20,13 +26,13 @@ export function addLegendOptions<T extends OptionsWithLegend>(
         options: [
           { value: LegendDisplayMode.List, label: 'List' },
           { value: LegendDisplayMode.Table, label: 'Table' },
-          { value: LegendDisplayMode.Hidden, label: 'Hidden' },
         ],
       },
+      showIf: (c) => c.legend.showLegend,
     })
     .addRadio({
       path: 'legend.placement',
-      name: 'Legend placement',
+      name: 'Placement',
       category: ['Legend'],
       description: '',
       defaultValue: 'bottom',
@@ -36,22 +42,31 @@ export function addLegendOptions<T extends OptionsWithLegend>(
           { value: 'right', label: 'Right' },
         ],
       },
-      showIf: (c) => c.legend.displayMode !== LegendDisplayMode.Hidden,
+      showIf: (c) => c.legend.showLegend,
+    })
+    .addNumberInput({
+      path: 'legend.width',
+      name: 'Width',
+      category: ['Legend'],
+      settings: {
+        placeholder: 'Auto',
+      },
+      showIf: (c) => c.legend.showLegend && c.legend.placement === 'right',
     });
 
   if (includeLegendCalcs) {
     builder.addCustomEditor<StatsPickerConfigSettings, string[]>({
       id: 'legend.calcs',
       path: 'legend.calcs',
-      name: 'Legend values',
+      name: 'Values',
       category: ['Legend'],
       description: 'Select values or calculations to show in legend',
-      editor: standardEditorsRegistry.get('stats-picker').editor as any,
+      editor: standardEditorsRegistry.get('stats-picker').editor,
       defaultValue: [],
       settings: {
         allowMultiple: true,
       },
-      showIf: (currentConfig) => currentConfig.legend.displayMode !== LegendDisplayMode.Hidden,
+      showIf: (currentConfig) => currentConfig.legend.showLegend !== false,
     });
   }
 }

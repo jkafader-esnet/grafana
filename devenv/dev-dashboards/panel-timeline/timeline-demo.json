@@ -3,22 +3,36 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
         "type": "dashboard"
       }
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 79,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -26,7 +40,8 @@
           },
           "custom": {
             "fillOpacity": 80,
-            "lineWidth": 1
+            "lineWidth": 1,
+            "spanNulls": false
           },
           "mappings": [
             {
@@ -55,8 +70,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -82,9 +96,13 @@
           "displayMode": "list",
           "placement": "bottom"
         },
-        "mode": "changes",
+        "mergeValues": true,
         "rowHeight": 0.98,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "pluginVersion": "7.5.0-pre",
       "targets": [
@@ -113,7 +131,10 @@
       "type": "state-timeline"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -121,7 +142,8 @@
           },
           "custom": {
             "fillOpacity": 70,
-            "lineWidth": 1
+            "lineWidth": 1,
+            "spanNulls": false
           },
           "mappings": [
             {
@@ -151,8 +173,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -173,9 +194,18 @@
       "options": {
         "alignValue": "center",
         "colWidth": 1,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "mergeValues": true,
         "mode": "changes",
         "rowHeight": 0.98,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {
@@ -207,7 +237,10 @@
       "type": "state-timeline"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "description": "Should show gaps",
       "fieldConfig": {
         "defaults": {
@@ -216,7 +249,8 @@
           },
           "custom": {
             "fillOpacity": 80,
-            "lineWidth": 1
+            "lineWidth": 1,
+            "spanNulls": false
           },
           "mappings": [
             {
@@ -246,8 +280,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -268,9 +301,18 @@
       "options": {
         "alignValue": "center",
         "colWidth": 1,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "mergeValues": true,
         "mode": "changes",
         "rowHeight": 0.98,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {
@@ -301,7 +343,10 @@
       "type": "state-timeline"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -319,8 +364,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -339,7 +383,6 @@
         "y": 19
       },
       "id": 4,
-      "interval": null,
       "maxDataPoints": 20,
       "options": {
         "alignValue": "center",
@@ -349,9 +392,12 @@
           "displayMode": "list",
           "placement": "bottom"
         },
-        "mode": "samples",
         "rowHeight": 0.98,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "asc"
+        }
       },
       "pluginVersion": "7.5.0-pre",
       "targets": [
@@ -393,10 +439,11 @@
     }
   ],
   "refresh": false,
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 36,
   "tags": [
     "gdev",
+    "panel-tests",
+    "graph-ng",
     "demo"
   ],
   "templating": {
@@ -410,5 +457,6 @@
   "timezone": "utc",
   "title": "Timeline Demo",
   "uid": "mIJjFy8Kz",
-  "version": 13
+  "version": 7,
+  "weekStart": ""
 }

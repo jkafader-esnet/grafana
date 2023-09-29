@@ -1,5 +1,7 @@
 import { isArray, reduce } from 'lodash';
-import { QueryPartDef, QueryPart } from 'app/core/components/query_part/query_part';
+
+import { IconName } from '@grafana/ui';
+import { QueryPartDef, QueryPart } from 'app/features/alerting/state/query_part';
 
 const alertQueryDef = new QueryPartDef({
   type: 'query',
@@ -61,7 +63,7 @@ const reducerTypes = [
   { text: 'percent_diff()', value: 'percent_diff' },
   { text: 'percent_diff_abs()', value: 'percent_diff_abs' },
   { text: 'count_non_null()', value: 'count_non_null' },
-];
+] as const;
 
 const noDataModes = [
   { text: 'Alerting', value: 'alerting' },
@@ -80,8 +82,23 @@ function createReducerPart(model: any) {
   return new QueryPart(model, def);
 }
 
-function getStateDisplayModel(state: string) {
-  switch (state) {
+// state can also contain a "Reason", ie. "Alerting (NoData)" which indicates that the actual state is "Alerting" but
+// the reason it is set to "Alerting" is "NoData"; a lack of data points to evaluate.
+function normalizeAlertState(state: string) {
+  return state.toLowerCase().replace(/_/g, '').split(' ')[0];
+}
+
+interface AlertStateDisplayModel {
+  text: string;
+  iconClass: IconName;
+  stateClass: string;
+}
+
+function getStateDisplayModel(state: string): AlertStateDisplayModel {
+  const normalizedState = normalizeAlertState(state);
+
+  switch (normalizedState) {
+    case 'normal':
     case 'ok': {
       return {
         text: 'OK',
@@ -96,7 +113,7 @@ function getStateDisplayModel(state: string) {
         stateClass: 'alert-state-critical',
       };
     }
-    case 'no_data': {
+    case 'nodata': {
       return {
         text: 'NO DATA',
         iconClass: 'question-circle',
@@ -117,13 +134,6 @@ function getStateDisplayModel(state: string) {
         stateClass: 'alert-state-warning',
       };
     }
-    case 'unknown': {
-      return {
-        text: 'UNKNOWN',
-        iconClass: 'question-circle',
-        stateClass: 'alert-state-paused',
-      };
-    }
 
     case 'firing': {
       return {
@@ -140,9 +150,24 @@ function getStateDisplayModel(state: string) {
         stateClass: '',
       };
     }
-  }
 
-  throw { message: 'Unknown alert state' };
+    case 'error': {
+      return {
+        text: 'ERROR',
+        iconClass: 'heart-break',
+        stateClass: 'alert-state-critical',
+      };
+    }
+
+    case 'unknown':
+    default: {
+      return {
+        text: 'UNKNOWN',
+        iconClass: 'question-circle',
+        stateClass: '.alert-state-paused',
+      };
+    }
+  }
 }
 
 function joinEvalMatches(matches: any, separator: string) {

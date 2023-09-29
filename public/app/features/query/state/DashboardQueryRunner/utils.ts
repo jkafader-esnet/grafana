@@ -1,11 +1,13 @@
 import { cloneDeep } from 'lodash';
 import { Observable, of } from 'rxjs';
-import { AnnotationEvent, AnnotationQuery, DataFrame, DataFrameView } from '@grafana/data';
-import { config, toDataQueryError } from '@grafana/runtime';
 
+import { AnnotationEvent, AnnotationQuery, DataFrame, DataFrameView, DataSourceApi } from '@grafana/data';
+import { config, toDataQueryError } from '@grafana/runtime';
 import { dispatch } from 'app/store/store';
+
 import { createErrorNotification } from '../../../../core/copy/appNotification';
 import { notifyApp } from '../../../../core/reducers/appNotification';
+
 import { DashboardQueryRunnerWorkerResult } from './types';
 
 export function handleAnnotationQueryRunnerError(err: any): Observable<AnnotationEvent[]> {
@@ -15,6 +17,11 @@ export function handleAnnotationQueryRunnerError(err: any): Observable<Annotatio
 
   notifyWithError('AnnotationQueryRunner failed', err);
   return of([]);
+}
+
+export function handleDatasourceSrvError(err: any): Observable<DataSourceApi | undefined> {
+  notifyWithError('Failed to retrieve datasource', err);
+  return of(undefined);
 }
 
 export const emptyResult: () => Observable<DashboardQueryRunnerWorkerResult> = () =>
@@ -37,8 +44,31 @@ function notifyWithError(title: string, err: any) {
 }
 
 export function getAnnotationsByPanelId(annotations: AnnotationEvent[], panelId?: number) {
+  if (panelId == null) {
+    return annotations;
+  }
+
   return annotations.filter((item) => {
-    if (panelId !== undefined && item.panelId && item.source?.type === 'dashboard') {
+    let source: AnnotationQuery;
+    source = item.source;
+    if (!source) {
+      return true; // should not happen
+    }
+
+    // generic panel filtering
+    if (source.filter) {
+      const includes = (source.filter.ids ?? []).includes(panelId);
+      if (source.filter.exclude) {
+        if (includes) {
+          return false;
+        }
+      } else if (!includes) {
+        return false;
+      }
+    }
+
+    // this is valid for the main 'grafana' datasource
+    if (item.panelId && item.source.type === 'dashboard') {
       return item.panelId === panelId;
     }
     return true;
@@ -59,9 +89,9 @@ export function translateQueryResult(annotation: AnnotationQuery, results: Annot
     item.type = annotation.name;
     item.isRegion = Boolean(item.timeEnd && item.time !== item.timeEnd);
 
-    switch (item.newState) {
+    switch (item.newState?.toLowerCase()) {
       case 'pending':
-        item.color = 'gray';
+        item.color = 'yellow';
         break;
       case 'alerting':
         item.color = 'red';
@@ -69,7 +99,13 @@ export function translateQueryResult(annotation: AnnotationQuery, results: Annot
       case 'ok':
         item.color = 'green';
         break;
+      case 'normal': // ngalert ("normal" instead of "ok")
+        item.color = 'green';
+        break;
       case 'no_data':
+        item.color = 'gray';
+        break;
+      case 'nodata': // ngalert
         item.color = 'gray';
         break;
     }

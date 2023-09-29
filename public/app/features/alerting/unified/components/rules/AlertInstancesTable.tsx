@@ -1,31 +1,42 @@
-import { GrafanaTheme2 } from '@grafana/data';
-import { Alert } from 'app/types/unified-alerting';
-import { css } from '@emotion/css';
-import React, { FC, useMemo } from 'react';
+import React, { useMemo } from 'react';
+
+import { dateTime, findCommonLabels } from '@grafana/data';
+import { Alert, PaginationProps } from 'app/types/unified-alerting';
+
 import { alertInstanceKey } from '../../utils/rules';
 import { AlertLabels } from '../AlertLabels';
+import { DynamicTable, DynamicTableColumnProps, DynamicTableItemProps } from '../DynamicTable';
+
 import { AlertInstanceDetails } from './AlertInstanceDetails';
 import { AlertStateTag } from './AlertStateTag';
-import { DynamicTable, DynamicTableColumnProps, DynamicTableItemProps } from '../DynamicTable';
 
 interface Props {
   instances: Alert[];
+  pagination?: PaginationProps;
+  footerRow?: JSX.Element;
 }
 
-type AlertTableColumnProps = DynamicTableColumnProps<Alert>;
-type AlertTableItemProps = DynamicTableItemProps<Alert>;
+interface AlertWithCommonLabels extends Alert {
+  commonLabels?: Record<string, string>;
+}
 
-export const AlertInstancesTable: FC<Props> = ({ instances }) => {
-  // add key & sort instance. API returns instances in random order, different every time.
+type AlertTableColumnProps = DynamicTableColumnProps<AlertWithCommonLabels>;
+type AlertTableItemProps = DynamicTableItemProps<AlertWithCommonLabels>;
+
+export const AlertInstancesTable = ({ instances, pagination, footerRow }: Props) => {
+  const commonLabels = useMemo(() => {
+    // only compute the common labels if we have more than 1 instance, if we don't then that single instance
+    // will have the complete set of common labels and no unique ones
+    return instances.length > 1 ? findCommonLabels(instances.map((instance) => instance.labels)) : {};
+  }, [instances]);
+
   const items = useMemo(
     (): AlertTableItemProps[] =>
-      instances
-        .map((instance) => ({
-          data: instance,
-          id: alertInstanceKey(instance),
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
-    [instances]
+      instances.map((instance) => ({
+        data: { ...instance, commonLabels },
+        id: alertInstanceKey(instance),
+      })),
+    [commonLabels, instances]
   );
 
   return (
@@ -34,32 +45,11 @@ export const AlertInstancesTable: FC<Props> = ({ instances }) => {
       isExpandable={true}
       items={items}
       renderExpandedContent={({ data }) => <AlertInstanceDetails instance={data} />}
+      pagination={pagination}
+      footerRow={footerRow}
     />
   );
 };
-
-export const getStyles = (theme: GrafanaTheme2) => ({
-  colExpand: css`
-    width: 36px;
-  `,
-  colState: css`
-    width: 110px;
-  `,
-  labelsCell: css`
-    padding-top: ${theme.spacing(0.5)} !important;
-    padding-bottom: ${theme.spacing(0.5)} !important;
-  `,
-  createdCell: css`
-    white-space: nowrap;
-  `,
-  table: css`
-    td {
-      vertical-align: top;
-      padding-top: ${theme.spacing(1)};
-      padding-bottom: ${theme.spacing(1)};
-    }
-  `,
-});
 
 const columns: AlertTableColumnProps[] = [
   {
@@ -73,14 +63,16 @@ const columns: AlertTableColumnProps[] = [
     id: 'labels',
     label: 'Labels',
     // eslint-disable-next-line react/display-name
-    renderCell: ({ data: { labels } }) => <AlertLabels labels={labels} />,
+    renderCell: ({ data: { labels, commonLabels } }) => (
+      <AlertLabels labels={labels} commonLabels={commonLabels} size="sm" />
+    ),
   },
   {
     id: 'created',
     label: 'Created',
     // eslint-disable-next-line react/display-name
     renderCell: ({ data: { activeAt } }) => (
-      <>{activeAt.startsWith('0001') ? '-' : activeAt.substr(0, 19).replace('T', ' ')}</>
+      <>{activeAt.startsWith('0001') ? '-' : dateTime(activeAt).format('YYYY-MM-DD HH:mm:ss')}</>
     ),
     size: '150px',
   },

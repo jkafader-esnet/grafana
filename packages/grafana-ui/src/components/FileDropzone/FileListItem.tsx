@@ -1,11 +1,14 @@
 import { css } from '@emotion/css';
-import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
 import React from 'react';
+
+import { formattedValueToString, getValueFormat, GrafanaTheme2 } from '@grafana/data';
+
 import { useStyles2 } from '../../themes';
 import { trimFileName } from '../../utils/file';
 import { Button } from '../Button';
 import { Icon } from '../Icon/Icon';
 import { IconButton } from '../IconButton/IconButton';
+
 import { DropzoneFile } from './FileDropzone';
 
 export const REMOVE_FILE = 'Remove file';
@@ -23,16 +26,13 @@ export function FileListItem({ file: customFile, removeFile }: FileListItemProps
       return (
         <>
           <span className={styles.error}>{error.message}</span>
-          {retryUpload && (
-            <IconButton aria-label="Retry" name="sync" tooltip="Retry" tooltipPlacement="top" onClick={retryUpload} />
-          )}
+          {retryUpload && <IconButton name="sync" tooltip="Retry" tooltipPlacement="top" onClick={retryUpload} />}
           {removeFile && (
             <IconButton
               className={retryUpload ? styles.marginLeft : ''}
               name="trash-alt"
               onClick={() => removeFile(customFile)}
               tooltip={REMOVE_FILE}
-              aria-label={REMOVE_FILE}
             />
           )}
         </>
@@ -46,7 +46,7 @@ export function FileListItem({ file: customFile, removeFile }: FileListItemProps
           <span className={styles.paddingLeft}>{Math.round((progress / file.size) * 100)}%</span>
           {abortUpload && (
             <Button variant="secondary" type="button" fill="text" onClick={abortUpload}>
-              Cancel
+              Cancel upload
             </Button>
           )}
         </>
@@ -58,7 +58,6 @@ export function FileListItem({ file: customFile, removeFile }: FileListItemProps
           name="trash-alt"
           onClick={() => removeFile(customFile)}
           tooltip={REMOVE_FILE}
-          aria-label={REMOVE_FILE}
           tooltipPlacement="top"
         />
       )
@@ -70,7 +69,7 @@ export function FileListItem({ file: customFile, removeFile }: FileListItemProps
   return (
     <div className={styles.fileListContainer}>
       <span className={styles.fileNameWrapper}>
-        <Icon name="file-blank" size="lg" />
+        <Icon name="file-blank" size="lg" aria-hidden={true} />
         <span className={styles.padding}>{trimFileName(file.name)}</span>
         <span>{formattedValueToString(valueFormat)}</span>
       </span>
@@ -82,46 +81,46 @@ export function FileListItem({ file: customFile, removeFile }: FileListItemProps
 
 function getStyles(theme: GrafanaTheme2) {
   return {
-    fileListContainer: css`
-      width: 100%;
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      padding: ${theme.spacing(2)};
-      border: 1px dashed ${theme.colors.border.medium};
-      background-color: ${theme.colors.background.secondary};
-      margin-top: ${theme.spacing(1)};
-    `,
-    fileNameWrapper: css`
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-    `,
-    padding: css`
-      padding: ${theme.spacing(0, 1)};
-    `,
-    paddingLeft: css`
-      padding-left: ${theme.spacing(2)};
-    `,
-    marginLeft: css`
-      margin-left: ${theme.spacing(1)};
-    `,
-    error: css`
-      padding-right: ${theme.spacing(2)};
-      color: ${theme.colors.error.text};
-    `,
-    progressBar: css`
-      border-radius: ${theme.spacing(1)};
-      height: 4px;
-      ::-webkit-progress-bar {
-        background-color: ${theme.colors.border.weak};
-        border-radius: ${theme.spacing(1)};
-      }
-      ::-webkit-progress-value {
-        background-color: ${theme.colors.primary.main};
-        border-radius: ${theme.spacing(1)};
-      }
-    `,
+    fileListContainer: css({
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: theme.spacing(2),
+      border: `1px dashed ${theme.colors.border.medium}`,
+      backgroundColor: `${theme.colors.background.secondary}`,
+      marginTop: theme.spacing(1),
+    }),
+    fileNameWrapper: css({
+      display: 'flex',
+      flexDirection: 'row',
+      alignItems: 'center',
+    }),
+    padding: css({
+      padding: theme.spacing(0, 1),
+    }),
+    paddingLeft: css({
+      paddingLeft: theme.spacing(2),
+    }),
+    marginLeft: css({
+      marginLeft: theme.spacing(1),
+    }),
+    error: css({
+      paddingRight: theme.spacing(2),
+      color: theme.colors.error.text,
+    }),
+    progressBar: css({
+      borderRadius: theme.shape.radius.default,
+      height: '4px',
+      '::-webkit-progress-bar': {
+        backgroundColor: theme.colors.border.weak,
+        borderRadius: theme.shape.radius.default,
+      },
+      '::-webkit-progress-value': {
+        backgroundColor: theme.colors.primary.main,
+        borderRadius: theme.shape.radius.default,
+      },
+    }),
   };
 }

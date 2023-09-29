@@ -1,13 +1,20 @@
-import React, { FunctionComponent, useMemo } from 'react';
-import { InlineFormLabel, Input } from '@grafana/ui';
+import { cx } from '@emotion/css';
+import React, { FormEvent, useMemo, useState } from 'react';
+
 import { config } from '@grafana/runtime';
+import { InlineField, InlineFieldRow, InlineSwitch, Input } from '@grafana/ui';
+import { HttpSettingsBaseProps } from '@grafana/ui/src/components/DataSourceSettings/types';
+
 import { KnownAzureClouds, AzureCredentials } from './AzureCredentials';
 import { getCredentials, updateCredentials } from './AzureCredentialsConfig';
 import { AzureCredentialsForm } from './AzureCredentialsForm';
-import { HttpSettingsBaseProps } from '@grafana/ui/src/components/DataSourceSettings/types';
 
-export const AzureAuthSettings: FunctionComponent<HttpSettingsBaseProps> = (props: HttpSettingsBaseProps) => {
+export const AzureAuthSettings = (props: HttpSettingsBaseProps) => {
   const { dataSourceConfig, onChange } = props;
+
+  const [overrideAudienceChecked, setOverrideAudienceChecked] = useState<boolean>(
+    !!dataSourceConfig.jsonData.azureEndpointResourceId
+  );
 
   const credentials = useMemo(() => getCredentials(dataSourceConfig), [dataSourceConfig]);
 
@@ -15,34 +22,58 @@ export const AzureAuthSettings: FunctionComponent<HttpSettingsBaseProps> = (prop
     onChange(updateCredentials(dataSourceConfig, credentials));
   };
 
+  const onOverrideAudienceChange = (ev: FormEvent<HTMLInputElement>): void => {
+    setOverrideAudienceChecked(ev.currentTarget.checked);
+    if (!ev.currentTarget.checked) {
+      onChange({
+        ...dataSourceConfig,
+        jsonData: { ...dataSourceConfig.jsonData, azureEndpointResourceId: undefined },
+      });
+    }
+  };
+
+  const onResourceIdChange = (ev: FormEvent<HTMLInputElement>): void => {
+    if (overrideAudienceChecked) {
+      onChange({
+        ...dataSourceConfig,
+        jsonData: { ...dataSourceConfig.jsonData, azureEndpointResourceId: ev.currentTarget.value },
+      });
+    }
+  };
+
+  const prometheusConfigOverhaulAuth = config.featureToggles.prometheusConfigOverhaulAuth;
+
+  const labelWidth = prometheusConfigOverhaulAuth ? 24 : 26;
+
   return (
     <>
-      <h6>Azure Authentication</h6>
+      <h6>Azure authentication</h6>
       <AzureCredentialsForm
         managedIdentityEnabled={config.azure.managedIdentityEnabled}
+        workloadIdentityEnabled={config.azure.workloadIdentityEnabled}
         credentials={credentials}
         azureCloudOptions={KnownAzureClouds}
         onCredentialsChange={onCredentialsChange}
+        disabled={dataSourceConfig.readOnly}
       />
-      <h6>Azure Configuration</h6>
+      <h6>Azure configuration</h6>
       <div className="gf-form-group">
-        <div className="gf-form-inline">
-          <div className="gf-form">
-            <InlineFormLabel className="width-12">AAD resource ID</InlineFormLabel>
-            <div className="width-15">
+        <InlineFieldRow>
+          <InlineField labelWidth={labelWidth} label="Override AAD audience" disabled={dataSourceConfig.readOnly}>
+            <InlineSwitch value={overrideAudienceChecked} onChange={onOverrideAudienceChange} />
+          </InlineField>
+        </InlineFieldRow>
+        {overrideAudienceChecked && (
+          <InlineFieldRow>
+            <InlineField labelWidth={labelWidth} label="Resource ID" disabled={dataSourceConfig.readOnly}>
               <Input
-                className="width-30"
+                className={cx(prometheusConfigOverhaulAuth ? 'width-20' : 'width-30')}
                 value={dataSourceConfig.jsonData.azureEndpointResourceId || ''}
-                onChange={(event) =>
-                  onChange({
-                    ...dataSourceConfig,
-                    jsonData: { ...dataSourceConfig.jsonData, azureEndpointResourceId: event.currentTarget.value },
-                  })
-                }
+                onChange={onResourceIdChange}
               />
-            </div>
-          </div>
-        </div>
+            </InlineField>
+          </InlineFieldRow>
+        )}
       </div>
     </>
   );

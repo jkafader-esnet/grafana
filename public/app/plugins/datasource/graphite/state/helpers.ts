@@ -1,15 +1,18 @@
-import { GraphiteQueryEditorState } from './store';
-import { each, map } from 'lodash';
-import { dispatch } from '../../../../store/store';
-import { notifyApp } from '../../../../core/reducers/appNotification';
+import { clone, some } from 'lodash';
+
 import { createErrorNotification } from '../../../../core/copy/appNotification';
+import { notifyApp } from '../../../../core/reducers/appNotification';
+import { dispatch } from '../../../../store/store';
 import { FuncInstance } from '../gfunc';
+import { GraphiteQuery, GraphiteTagOperator } from '../types';
+
+import { GraphiteQueryEditorState } from './store';
 
 /**
  * Helpers used by reducers and providers. They modify state object directly so should operate on a copy of the state.
  */
 
-export const GRAPHITE_TAG_OPERATORS = ['=', '!=', '=~', '!=~'];
+export const GRAPHITE_TAG_OPERATORS: GraphiteTagOperator[] = ['=', '!=', '=~', '!=~'];
 
 /**
  * Tag names and metric names are displayed in a single dropdown. This prefix is used to
@@ -30,17 +33,12 @@ export async function parseTarget(state: GraphiteQueryEditorState): Promise<void
  * Create segments out of the current metric path + add "select metrics" if it's possible to add more to the path
  */
 export async function buildSegments(state: GraphiteQueryEditorState, modifyLastSegment = true): Promise<void> {
-  state.segments = map(state.queryModel.segments, (segment) => {
-    return state.uiSegmentSrv.newSegment(segment);
-  });
+  // Start with a shallow copy from the model, then check if "select metric" segment should be added at the end
+  state.segments = clone(state.queryModel.segments);
 
   const checkOtherSegmentsIndex = state.queryModel.checkOtherSegmentsIndex || 0;
 
   await checkOtherSegments(state, checkOtherSegmentsIndex, modifyLastSegment);
-
-  if (state.queryModel.seriesByTagUsed) {
-    fixTagSegments(state);
-  }
 }
 
 /**
@@ -48,7 +46,7 @@ export async function buildSegments(state: GraphiteQueryEditorState, modifyLastS
  */
 export function addSelectMetricSegment(state: GraphiteQueryEditorState): void {
   state.queryModel.addSelectMetricSegment();
-  state.segments.push(state.uiSegmentSrv.newSelectMetric());
+  state.segments.push({ value: 'select metric', fake: true });
 }
 
 /**
@@ -71,7 +69,8 @@ export async function checkOtherSegments(
     return;
   }
 
-  const path = state.queryModel.getSegmentPathUpTo(fromIndex + 1);
+  const currentFromIndex = fromIndex + 1;
+  const path = state.queryModel.getSegmentPathUpTo(currentFromIndex);
   if (path === '') {
     return;
   }
@@ -80,32 +79,24 @@ export async function checkOtherSegments(
     const segments = await state.datasource.metricFindQuery(path);
     if (segments.length === 0) {
       if (path !== '' && modifyLastSegment) {
-        state.queryModel.segments = state.queryModel.segments.splice(0, fromIndex);
-        state.segments = state.segments.splice(0, fromIndex);
-        addSelectMetricSegment(state);
+        state.queryModel.segments = state.queryModel.segments.splice(0, currentFromIndex);
+        state.segments = state.segments.splice(0, currentFromIndex);
+        if (!some(state.segments, { fake: true })) {
+          addSelectMetricSegment(state);
+        }
       }
     } else if (segments[0].expandable) {
       if (state.segments.length === fromIndex) {
         addSelectMetricSegment(state);
       } else {
-        await checkOtherSegments(state, fromIndex + 1);
+        await checkOtherSegments(state, currentFromIndex);
       }
     }
   } catch (err) {
-    handleMetricsAutoCompleteError(state, err);
+    if (err instanceof Error) {
+      handleMetricsAutoCompleteError(state, err);
+    }
   }
-}
-
-/**
- * Changes segment being in focus. After changing the value, next segment gets focus.
- *
- * Note: It's a bit hidden feature. After selecting one metric, and pressing down arrow the dropdown can be expanded.
- * But there's nothing indicating what's in focus and how to expand the dropdown.
- */
-export function setSegmentFocus(state: GraphiteQueryEditorState, segmentIndex: number): void {
-  each(state.segments, (segment, index) => {
-    segment.focus = segmentIndex === index;
-  });
 }
 
 export function spliceSegments(state: GraphiteQueryEditorState, index: number): void {
@@ -151,14 +142,6 @@ export function smartlyHandleNewAliasByNode(state: GraphiteQueryEditorState, fun
 }
 
 /**
- * Add "+" button for adding tags once at least one tag is selected
- */
-export function fixTagSegments(state: GraphiteQueryEditorState): void {
-  // Adding tag with the same name as just removed works incorrectly if single segment is used (instead of array)
-  state.addTagSegments = [state.uiSegmentSrv.newPlusButton()];
-}
-
-/**
  * Pauses running the query to allow selecting tag value. This is to prevent getting errors if the query is run
  * for a tag with no selected value.
  */
@@ -175,11 +158,21 @@ export function handleTargetChanged(state: GraphiteQueryEditorState): void {
     return;
   }
 
-  const oldTarget = state.queryModel.target.target;
-  state.queryModel.updateModelTarget(state.panelCtrl.panel.targets);
+  let oldTarget = state.queryModel.target.target;
+  // Interpolate from other queries:
+  // Because of mixed data sources the list may contain queries for non-Graphite data sources. To ensure a valid query
+  // is used for interpolation we should check required properties are passed though in theory it allows to interpolate
+  // with queries that contain "target" property as well.
+  state.queryModel.updateModelTarget(
+    (state.queries || []).filter((query) => 'target' in query && typeof (query as GraphiteQuery).target === 'string')
+  );
 
-  if (state.queryModel.target.target !== oldTarget && !state.paused) {
-    state.panelCtrl.refresh();
+  // remove spaces from old and new targets
+  const newTarget = state.queryModel.target.target.replace(/\s+/g, '');
+  oldTarget = oldTarget.replace(/\s+/g, '');
+
+  if (newTarget !== oldTarget && !state.paused) {
+    state.refresh();
   }
 }
 
@@ -190,7 +183,6 @@ export function handleMetricsAutoCompleteError(
   state: GraphiteQueryEditorState,
   error: Error
 ): GraphiteQueryEditorState {
-  console.error(error);
   if (!state.metricAutoCompleteErrorShown) {
     state.metricAutoCompleteErrorShown = true;
     dispatch(notifyApp(createErrorNotification(`Fetching metrics failed: ${error.message}.`)));
@@ -202,7 +194,6 @@ export function handleMetricsAutoCompleteError(
  * When tags autocomplete fails - the error is shown, but only once per page view
  */
 export function handleTagsAutoCompleteError(state: GraphiteQueryEditorState, error: Error): GraphiteQueryEditorState {
-  console.error(error);
   if (!state.tagsAutoCompleteErrorShown) {
     state.tagsAutoCompleteErrorShown = true;
     dispatch(notifyApp(createErrorNotification(`Fetching tags failed: ${error.message}.`)));

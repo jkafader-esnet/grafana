@@ -1,43 +1,69 @@
+import { lastValueFrom, Observable, of } from 'rxjs';
+import { map } from 'rxjs/operators';
+
 import {
-  DataQuery,
   DataQueryRequest,
   DataQueryResponse,
   DataSourceApi,
   DataSourceInstanceSettings,
+  DataSourceJsonData,
   FieldType,
-  MutableDataFrame,
+  createDataFrame,
+  ScopedVars,
 } from '@grafana/data';
-import { BackendSrvRequest, FetchResponse, getBackendSrv } from '@grafana/runtime';
-import { Observable, of } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { serializeParams } from '../../../core/utils/fetch';
-import { apiPrefix } from './constants';
-import { ZipkinSpan } from './types';
-import { transformResponse } from './utils/transforms';
-import { createGraphFrames } from './utils/graphTransform';
+import { BackendSrvRequest, FetchResponse, getBackendSrv, getTemplateSrv, TemplateSrv } from '@grafana/runtime';
+import { NodeGraphOptions } from 'app/core/components/NodeGraphSettings';
+import { SpanBarOptions } from 'app/features/explore/TraceView/components';
 
-export interface ZipkinQuery extends DataQuery {
-  query: string;
+import { serializeParams } from '../../../core/utils/fetch';
+
+import { apiPrefix } from './constants';
+import { ZipkinQuery, ZipkinSpan } from './types';
+import { createGraphFrames } from './utils/graphTransform';
+import { transformResponse } from './utils/transforms';
+
+export interface ZipkinJsonData extends DataSourceJsonData {
+  nodeGraph?: NodeGraphOptions;
 }
 
-export class ZipkinDatasource extends DataSourceApi<ZipkinQuery> {
-  constructor(private instanceSettings: DataSourceInstanceSettings) {
+export class ZipkinDatasource extends DataSourceApi<ZipkinQuery, ZipkinJsonData> {
+  uploadedJson: string | ArrayBuffer | null = null;
+  nodeGraph?: NodeGraphOptions;
+  spanBar?: SpanBarOptions;
+  constructor(
+    private instanceSettings: DataSourceInstanceSettings<ZipkinJsonData>,
+    private readonly templateSrv: TemplateSrv = getTemplateSrv()
+  ) {
     super(instanceSettings);
+    this.nodeGraph = instanceSettings.jsonData.nodeGraph;
   }
 
   query(options: DataQueryRequest<ZipkinQuery>): Observable<DataQueryResponse> {
-    const traceId = options.targets[0]?.query;
-    if (traceId) {
-      return this.request<ZipkinSpan[]>(`${apiPrefix}/trace/${encodeURIComponent(traceId)}`).pipe(
-        map(responseToDataQueryResponse)
-      );
-    } else {
-      return of(emptyDataQueryResponse);
+    const target = options.targets[0];
+    if (target.queryType === 'upload') {
+      if (!this.uploadedJson) {
+        return of({ data: [] });
+      }
+
+      try {
+        const traceData = JSON.parse(this.uploadedJson as string);
+        return of(responseToDataQueryResponse({ data: traceData }, this.nodeGraph?.enabled));
+      } catch (error) {
+        return of({ error: { message: 'JSON is not valid Zipkin format' }, data: [] });
+      }
     }
+
+    if (target.query) {
+      const query = this.applyVariables(target, options.scopedVars);
+      return this.request<ZipkinSpan[]>(`${apiPrefix}/trace/${encodeURIComponent(query.query)}`).pipe(
+        map((res) => responseToDataQueryResponse(res, this.nodeGraph?.enabled))
+      );
+    }
+    return of(emptyDataQueryResponse);
   }
 
   async metadataRequest(url: string, params?: Record<string, any>): Promise<any> {
-    const res = await this.request(url, params, { hideFromInspector: true }).toPromise();
+    const res = await lastValueFrom(this.request(url, params, { hideFromInspector: true }));
     return res.data;
   }
 
@@ -48,6 +74,29 @@ export class ZipkinDatasource extends DataSourceApi<ZipkinQuery> {
 
   getQueryDisplayText(query: ZipkinQuery): string {
     return query.query;
+  }
+
+  interpolateVariablesInQueries(queries: ZipkinQuery[], scopedVars: ScopedVars): ZipkinQuery[] {
+    if (!queries || queries.length === 0) {
+      return [];
+    }
+
+    return queries.map((query) => {
+      return {
+        ...query,
+        datasource: this.getRef(),
+        ...this.applyVariables(query, scopedVars),
+      };
+    });
+  }
+
+  applyVariables(query: ZipkinQuery, scopedVars: ScopedVars) {
+    const expandedQuery = { ...query };
+
+    return {
+      ...expandedQuery,
+      query: this.templateSrv.replace(query.query ?? '', scopedVars),
+    };
   }
 
   private request<T = any>(
@@ -66,15 +115,19 @@ export class ZipkinDatasource extends DataSourceApi<ZipkinQuery> {
   }
 }
 
-function responseToDataQueryResponse(response: { data: ZipkinSpan[] }): DataQueryResponse {
+function responseToDataQueryResponse(response: { data: ZipkinSpan[] }, nodeGraph = false): DataQueryResponse {
+  let data = response?.data ? [transformResponse(response?.data)] : [];
+  if (nodeGraph) {
+    data.push(...createGraphFrames(response?.data));
+  }
   return {
-    data: response?.data ? [transformResponse(response?.data), ...createGraphFrames(response?.data)] : [],
+    data,
   };
 }
 
 const emptyDataQueryResponse = {
   data: [
-    new MutableDataFrame({
+    createDataFrame({
       fields: [
         {
           name: 'trace',
@@ -84,6 +137,9 @@ const emptyDataQueryResponse = {
       ],
       meta: {
         preferredVisualisationType: 'trace',
+        custom: {
+          traceFormat: 'zipkin',
+        },
       },
     }),
   ],

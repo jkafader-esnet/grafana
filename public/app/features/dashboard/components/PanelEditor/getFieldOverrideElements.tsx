@@ -1,5 +1,7 @@
-import React from 'react';
+import { css } from '@emotion/css';
 import { cloneDeep } from 'lodash';
+import React from 'react';
+
 import {
   FieldConfigOptionsRegistry,
   SelectableValue,
@@ -8,17 +10,21 @@ import {
   DynamicConfigValue,
   ConfigOverrideRule,
   GrafanaTheme2,
+  fieldMatchers,
 } from '@grafana/data';
 import { fieldMatchersUI, useStyles2, ValuePicker } from '@grafana/ui';
-import { OptionPaneRenderProps } from './types';
-import { OptionsPaneItemDescriptor } from './OptionsPaneItemDescriptor';
-import { OptionsPaneCategoryDescriptor } from './OptionsPaneCategoryDescriptor';
-import { DynamicConfigValueEditor } from './DynamicConfigValueEditor';
 import { getDataLinksVariableSuggestions } from 'app/features/panel/panellinks/link_srv';
-import { OverrideCategoryTitle } from './OverrideCategoryTitle';
-import { css } from '@emotion/css';
 
-export function getFieldOverrideCategories(props: OptionPaneRenderProps): OptionsPaneCategoryDescriptor[] {
+import { DynamicConfigValueEditor } from './DynamicConfigValueEditor';
+import { OptionsPaneCategoryDescriptor } from './OptionsPaneCategoryDescriptor';
+import { OptionsPaneItemDescriptor } from './OptionsPaneItemDescriptor';
+import { OverrideCategoryTitle } from './OverrideCategoryTitle';
+import { OptionPaneRenderProps } from './types';
+
+export function getFieldOverrideCategories(
+  props: OptionPaneRenderProps,
+  searchQuery: string
+): OptionsPaneCategoryDescriptor[] {
   const categories: OptionsPaneCategoryDescriptor[] = [];
   const currentFieldConfig = props.panel.fieldConfig;
   const registry = props.plugin.fieldConfigRegistry;
@@ -28,7 +34,7 @@ export function getFieldOverrideCategories(props: OptionPaneRenderProps): Option
     return [];
   }
 
-  const onOverrideChange = (index: number, override: any) => {
+  const onOverrideChange = (index: number, override: ConfigOverrideRule) => {
     let overrides = cloneDeep(currentFieldConfig.overrides);
     overrides[index] = override;
     props.onFieldConfigsChange({ ...currentFieldConfig, overrides });
@@ -41,13 +47,19 @@ export function getFieldOverrideCategories(props: OptionPaneRenderProps): Option
   };
 
   const onOverrideAdd = (value: SelectableValue<string>) => {
+    const info = fieldMatchers.get(value.value!);
+    if (!info) {
+      return;
+    }
+
     props.onFieldConfigsChange({
       ...currentFieldConfig,
       overrides: [
         ...currentFieldConfig.overrides,
         {
           matcher: {
-            id: value.value!,
+            id: info.id,
+            options: info.defaultOptions,
           },
           properties: [],
         },
@@ -121,6 +133,7 @@ export function getFieldOverrideCategories(props: OptionPaneRenderProps): Option
         render: function renderMatcherUI() {
           return (
             <matcherUi.component
+              id={`${matcherUi.matcher.id}-${idx}`}
               matcher={matcherUi.matcher}
               data={props.data?.series ?? []}
               options={override.matcher.options}
@@ -142,7 +155,7 @@ export function getFieldOverrideCategories(props: OptionPaneRenderProps): Option
         continue;
       }
 
-      const onPropertyChange = (value: any) => {
+      const onPropertyChange = (value: DynamicConfigValue) => {
         override.properties[propIdx].value = value;
         onOverrideChange(idx, override);
       };
@@ -169,6 +182,7 @@ export function getFieldOverrideCategories(props: OptionPaneRenderProps): Option
                 property={property}
                 registry={registry}
                 context={context}
+                searchQuery={searchQuery}
               />
             );
           },
@@ -260,5 +274,6 @@ function getBorderTopStyles(theme: GrafanaTheme2) {
   return css({
     borderTop: `1px solid ${theme.colors.border.weak}`,
     padding: `${theme.spacing(2)}`,
+    display: 'flex',
   });
 }

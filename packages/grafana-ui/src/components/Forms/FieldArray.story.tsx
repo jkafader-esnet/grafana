@@ -1,15 +1,18 @@
+import { Meta, Story } from '@storybook/react';
 import React from 'react';
-import { withCenteredStory } from '../../utils/storybook/withCenteredStory';
-import { withStoryContainer } from '../../utils/storybook/withStoryContainer';
+import { FieldValues } from 'react-hook-form';
+
 import { Form, Input, Button, HorizontalGroup } from '@grafana/ui';
+
+import { withStoryContainer } from '../../utils/storybook/withStoryContainer';
+
 import { FieldArray } from './FieldArray';
 import mdx from './FieldArray.mdx';
-import { Meta, Story } from '@storybook/react';
 
 export default {
   title: 'Forms/FieldArray',
   component: FieldArray,
-  decorators: [withStoryContainer, withCenteredStory],
+  decorators: [withStoryContainer],
   parameters: {
     docs: {
       page: mdx,
@@ -25,7 +28,7 @@ export default {
 } as Meta;
 
 export const Simple: Story = (args) => {
-  const defaultValues: any = {
+  const defaultValues: FieldValues = {
     people: [{ firstName: 'Janis', lastName: 'Joplin' }],
   };
   return (

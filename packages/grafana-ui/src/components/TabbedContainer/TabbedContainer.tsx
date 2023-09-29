@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
 import { css } from '@emotion/css';
+import React, { useState } from 'react';
 
 import { SelectableValue, GrafanaTheme2 } from '@grafana/data';
-import { stylesFactory, useTheme2 } from '../../themes';
+
 import { IconName, TabsBar, Tab, IconButton, CustomScrollbar, TabContent } from '../..';
+import { stylesFactory, useTheme2 } from '../../themes';
 
 export interface TabConfig {
   label: string;
@@ -21,28 +22,28 @@ export interface TabbedContainerProps {
 
 const getStyles = stylesFactory((theme: GrafanaTheme2) => {
   return {
-    container: css`
-      height: 100%;
-    `,
-    tabContent: css`
-      padding: ${theme.spacing(2)};
-      background-color: ${theme.colors.background.primary};
-      height: 100%;
-    `,
-    close: css`
-      position: absolute;
-      right: 16px;
-      top: 5px;
-      cursor: pointer;
-      font-size: ${theme.typography.size.lg};
-    `,
-    tabs: css`
-      padding-top: ${theme.spacing(1)};
-      border-color: ${theme.colors.border.weak};
-      ul {
-        margin-left: ${theme.spacing(2)};
-      }
-    `,
+    container: css({
+      height: '100%',
+    }),
+    tabContent: css({
+      padding: theme.spacing(2),
+      backgroundColor: theme.colors.background.primary,
+      height: `calc(100% - ${theme.components.menuTabs.height}px)`,
+    }),
+    close: css({
+      position: 'absolute',
+      right: '16px',
+      top: '5px',
+      cursor: 'pointer',
+      fontSize: theme.typography.size.lg,
+    }),
+    tabs: css({
+      paddingTop: theme.spacing(1),
+      borderColor: theme.colors.border.weak,
+      ul: {
+        marginLeft: theme.spacing(2),
+      },
+    }),
   };
 });
 
@@ -71,7 +72,7 @@ export function TabbedContainer(props: TabbedContainerProps) {
             icon={t.icon}
           />
         ))}
-        <IconButton className={styles.close} onClick={onClose} name="times" title={closeIconTooltip ?? 'Close'} />
+        <IconButton className={styles.close} onClick={onClose} name="times" tooltip={closeIconTooltip ?? 'Close'} />
       </TabsBar>
       <CustomScrollbar autoHeightMin="100%">
         <TabContent className={styles.tabContent}>{tabs.find((t) => t.value === activeTab)?.content}</TabContent>

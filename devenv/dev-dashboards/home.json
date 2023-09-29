@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -19,12 +22,17 @@
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 28,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 26,
         "w": 6,
@@ -34,7 +42,6 @@
       "id": 7,
       "links": [],
       "options": {
-        "folderId": null,
         "maxItems": 100,
         "query": "",
         "showHeadings": true,
@@ -43,15 +50,16 @@
         "showStarred": true,
         "tags": []
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "Starred",
       "type": "dashlist"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 13,
         "w": 6,
@@ -71,17 +79,18 @@
           "panel-tests"
         ]
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [
         "panel-tests"
       ],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "tag: panel-tests",
       "type": "dashlist"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 13,
         "w": 6,
@@ -91,7 +100,6 @@
       "id": 3,
       "links": [],
       "options": {
-        "folderId": null,
         "maxItems": 1000,
         "query": "",
         "showHeadings": false,
@@ -103,18 +111,19 @@
           "demo"
         ]
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [
         "gdev",
         "demo"
       ],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "tag: dashboard-demo",
       "type": "dashlist"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 26,
         "w": 6,
@@ -124,7 +133,6 @@
       "id": 5,
       "links": [],
       "options": {
-        "folderId": null,
         "maxItems": 1000,
         "query": "",
         "showHeadings": false,
@@ -136,18 +144,19 @@
           "datasource-test"
         ]
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [
         "gdev",
         "datasource-test"
       ],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "Data source tests",
       "type": "dashlist"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 13,
         "w": 6,
@@ -168,18 +177,19 @@
           "gdev"
         ]
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [
         "templating",
         "gdev"
       ],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "tag: templating ",
       "type": "dashlist"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "gridPos": {
         "h": 13,
         "w": 6,
@@ -200,19 +210,16 @@
           "transform"
         ]
       },
-      "pluginVersion": "8.1.0-pre",
+      "pluginVersion": "9.0.0-pre",
       "tags": [
         "gdev",
         "demo"
       ],
-      "timeFrom": null,
-      "timeShift": null,
       "title": "tag: transforms",
       "type": "dashlist"
     }
   ],
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 36,
   "tags": [],
   "templating": {
     "list": []
@@ -249,5 +256,6 @@
   "timezone": "",
   "title": "Grafana Dev Overview & Home",
   "uid": "j6T00KRZz",
-  "version": 2
+  "version": 3,
+  "weekStart": ""
 }

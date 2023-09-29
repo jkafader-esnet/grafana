@@ -1,6 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="[[.User.Language]]">
   <head>
+    [[ if and .CSPEnabled .IsDevelopmentEnv ]]
+    <!-- Cypress overwrites CSP headers in HTTP requests, so this is required for e2e tests-->
+    <meta  http-equiv="Content-Security-Policy" content="[[.CSPContent]]"/>
+    [[ end ]]
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
     <meta name="viewport" content="width=device-width" />
@@ -10,17 +14,16 @@
 
     <base href="[[.AppSubUrl]]/" />
 
-    <link
-      rel="preload"
-      href="[[.ContentDeliveryURL]]public/fonts/roboto/RxZJdnzeo3R5zSexge8UUVtXRa8TVwTICgirnJhmVJw.woff2"
-      as="font"
-      crossorigin
-    />
-
     <link rel="icon" type="image/png" href="[[.FavIcon]]" />
     <link rel="apple-touch-icon" sizes="180x180" href="[[.AppleTouchIcon]]" />
     <link rel="mask-icon" href="[[.ContentDeliveryURL]]public/img/grafana_mask_icon.svg" color="#F05A28" />
-    <link rel="stylesheet" href="[[.ContentDeliveryURL]]public/build/grafana.[[ .Theme ]].<%= webpack.hash %>.css" />
+
+    <!-- If theme is "system", we inject the stylesheets with javascript further down the page -->
+    [[ if eq .ThemeType "light" ]]
+    <link rel="stylesheet" href="[[.ContentDeliveryURL]]public/build/<%= htmlWebpackPlugin.files.cssChunks.light %>" />
+    [[ else if eq .ThemeType "dark" ]]
+    <link rel="stylesheet" href="[[.ContentDeliveryURL]]public/build/<%= htmlWebpackPlugin.files.cssChunks.dark %>" />
+    [[ end ]]
 
     <script nonce="[[.Nonce]]">
       performance.mark('frontend_boot_css_time_seconds');
@@ -32,7 +35,7 @@
     <meta name="msapplication-config" content="public/img/browserconfig.xml" />
   </head>
 
-  <body class="theme-[[ .Theme ]] [[.AppNameBodyClass]]">
+  <body class="theme-[[ .ThemeType ]] [[.AppNameBodyClass]]">
     <style>
       .preloader {
         height: 100%;
@@ -67,7 +70,7 @@
         height: 60px;
         background-repeat: no-repeat;
         background-size: contain;
-        background-image: url("[[.LoadingLogo]]");
+        background-image: url('[[.LoadingLogo]]');
       }
 
       .preloader__text {
@@ -189,8 +192,7 @@
           2. If you host grafana under subpath make sure your grafana.ini root_url setting includes subpath. If not
           using a reverse proxy make sure to set serve_from_sub_path to true.<br />
           <br />
-          3. If you have a local dev build make sure you build frontend using: yarn start, yarn start:hot, or yarn
-          build<br />
+          3. If you have a local dev build make sure you build frontend using: yarn start, or yarn build<br />
           <br />
           4. Sometimes restarting grafana-server can help<br />
           <br />
@@ -243,29 +245,57 @@
     <div id="reactRoot"></div>
 
     <script nonce="[[.Nonce]]">
-        window.grafanaBootData = {
-          user: [[.User]],
-          settings: [[.Settings]],
-          navTree: [[.NavTree]],
-          themePaths: {
-            light: '[[.ContentDeliveryURL]]public/build/grafana.light.<%= webpack.hash %>.css',
-            dark: '[[.ContentDeliveryURL]]public/build/grafana.dark.<%= webpack.hash %>.css'
-          }
-        };
+      window.grafanaBootData = {
+        user: [[.User]],
+        settings: [[.Settings]],
+        navTree: [[.NavTree]],
+        themePaths: {
+          light: '[[.ContentDeliveryURL]]public/build/<%= htmlWebpackPlugin.files.cssChunks.light %>',
+          dark: '[[.ContentDeliveryURL]]public/build/<%= htmlWebpackPlugin.files.cssChunks.dark %>'
+        }
+      };
+
+      // Set theme to match system only on startup.
+      // Do not react to changes in system theme after startup.
+      if (window.grafanaBootData.user.theme === "system") {
+        document.body.classList.remove("theme-system");
+        var darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+        var cssLink = document.createElement("link");
+        cssLink.rel = 'stylesheet';
+
+        if (darkQuery.matches) {
+          document.body.classList.add("theme-dark");
+          cssLink.href = window.grafanaBootData.themePaths.dark;
+          window.grafanaBootData.user.lightTheme = false;
+        } else {
+          document.body.classList.add("theme-light");
+          cssLink.href = window.grafanaBootData.themePaths.light;
+          window.grafanaBootData.user.lightTheme = true;
+        }
+        document.head.appendChild(cssLink);
+      }
+
+      window.__grafana_load_failed = function() {
+        var preloader = document.getElementsByClassName("preloader");
+        if (preloader.length) {
+          preloader[0].className = "preloader preloader--done";
+        }
+      }
 
       // In case the js files fails to load the code below will show an info message.
-        window.onload = function() {
-          var preloader = document.getElementsByClassName("preloader");
-          if (preloader.length) {
-            preloader[0].className = "preloader preloader--done";
-          }
-        };
-        [[if .ContentDeliveryURL]]
-          window.public_cdn_path = '[[.ContentDeliveryURL]]public/build/';
-        [[end]]
-        [[if .Nonce]]
-          window.nonce = '[[.Nonce]]';
-        [[end]]
+      window.onload = function() {
+        if (window.__grafana_app_bundle_loaded) {
+          return;
+        }
+        window.__grafana_load_failed();
+      };
+
+      [[if .ContentDeliveryURL]]
+        window.public_cdn_path = '[[.ContentDeliveryURL]]public/build/';
+      [[end]]
+      [[if .Nonce]]
+        window.nonce = '[[.Nonce]]';
+      [[end]]
     </script>
 
     [[if .GoogleTagManagerId]]
@@ -303,18 +333,18 @@
       })(window, document, 'script', 'dataLayer', '[[.GoogleTagManagerId]]');
     </script>
     <!-- End Google Tag Manager -->
-    [[end]] <% for (key in htmlWebpackPlugin.files.chunks) { %> <% if (htmlWebpackPlugin.files.jsIntegrity) { %>
+    [[end]] <% for (index in htmlWebpackPlugin.files.js) { %> <% if (htmlWebpackPlugin.files.jsIntegrity) { %>
     <script
       nonce="[[.Nonce]]"
-      src="[[.ContentDeliveryURL]]<%= htmlWebpackPlugin.files.chunks[key].entry %>"
+      src="[[.ContentDeliveryURL]]<%= htmlWebpackPlugin.files.js[index] %>"
       type="text/javascript"
-      integrity="<%= htmlWebpackPlugin.files.jsIntegrity[htmlWebpackPlugin.files.js.indexOf(htmlWebpackPlugin.files.chunks[key].entry)] %>"
+      integrity="<%= htmlWebpackPlugin.files.jsIntegrity[index] %>"
       crossorigin="<%= webpackConfig.output.crossOriginLoading %>"
     ></script>
     <% } else { %>
     <script
       nonce="[[.Nonce]]"
-      src="[[.ContentDeliveryURL]]<%= htmlWebpackPlugin.files.chunks[key].entry %>"
+      src="[[.ContentDeliveryURL]]<%= htmlWebpackPlugin.files.js[index] %>"
       type="text/javascript"
     ></script>
     <% } %> <% } %>

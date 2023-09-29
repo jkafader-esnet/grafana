@@ -1,19 +1,19 @@
-import React, { FC, FormEvent, MouseEvent, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { dateMath, dateTime, getDefaultTimeRange, GrafanaTheme2, TimeRange, TimeZone } from '@grafana/data';
+import React, { FormEvent, MouseEvent, useState } from 'react';
+
+import { dateTime, getDefaultTimeRange, GrafanaTheme2, TimeRange, TimeZone } from '@grafana/data';
+import { selectors } from '@grafana/e2e-selectors';
+
+import { stylesFactory } from '../../themes';
 import { useTheme2 } from '../../themes/ThemeContext';
 import { ClickOutsideWrapper } from '../ClickOutsideWrapper/ClickOutsideWrapper';
 import { Icon } from '../Icon/Icon';
 import { getInputStyles } from '../Input/Input';
-import { TimePickerButtonLabel } from './TimeRangePicker';
-import { TimePickerContent } from './TimeRangePicker/TimePickerContent';
-import { otherOptions, quickOptions } from './rangeOptions';
-import { selectors } from '@grafana/e2e-selectors';
-import { stylesFactory } from '../../themes';
 
-const isValidTimeRange = (range: any) => {
-  return dateMath.isValid(range.from) && dateMath.isValid(range.to);
-};
+import { TimePickerContent } from './TimeRangePicker/TimePickerContent';
+import { TimeRangeLabel } from './TimeRangePicker/TimeRangeLabel';
+import { quickOptions } from './options';
+import { isValidTimeRange } from './utils';
 
 export interface TimeRangeInputProps {
   value: TimeRange;
@@ -23,14 +23,17 @@ export interface TimeRangeInputProps {
   hideTimeZone?: boolean;
   placeholder?: string;
   clearable?: boolean;
+  /** Controls horizontal alignment of the picker menu */
   isReversed?: boolean;
+  /** Controls visibility of the preset time ranges (e.g. **Last 5 minutes**) in the picker menu */
   hideQuickRanges?: boolean;
   disabled?: boolean;
+  showIcon?: boolean;
 }
 
 const noop = () => {};
 
-export const TimeRangeInput: FC<TimeRangeInputProps> = ({
+export const TimeRangeInput = ({
   value,
   onChange,
   onChangeTimeZone = noop,
@@ -41,12 +44,13 @@ export const TimeRangeInput: FC<TimeRangeInputProps> = ({
   isReversed = true,
   hideQuickRanges = false,
   disabled = false,
-}) => {
+  showIcon = false,
+}: TimeRangeInputProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const theme = useTheme2();
   const styles = getStyles(theme, disabled);
 
-  const onOpen = (event: FormEvent<HTMLDivElement>) => {
+  const onOpen = (event: FormEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     event.preventDefault();
     if (disabled) {
@@ -73,17 +77,15 @@ export const TimeRangeInput: FC<TimeRangeInputProps> = ({
 
   return (
     <div className={styles.container}>
-      <div
-        tabIndex={0}
+      <button
+        type="button"
         className={styles.pickerInput}
         aria-label={selectors.components.TimePicker.openButton}
         onClick={onOpen}
       >
-        {isValidTimeRange(value) ? (
-          <TimePickerButtonLabel value={value as TimeRange} timeZone={timeZone} />
-        ) : (
-          <span className={styles.placeholder}>{placeholder}</span>
-        )}
+        {showIcon && <Icon name="clock-nine" size={'sm'} className={styles.icon} />}
+
+        <TimeRangeLabel value={value} timeZone={timeZone} placeholder={placeholder} />
 
         {!disabled && (
           <span className={styles.caretIcon}>
@@ -93,14 +95,13 @@ export const TimeRangeInput: FC<TimeRangeInputProps> = ({
             <Icon name={isOpen ? 'angle-up' : 'angle-down'} size="lg" />
           </span>
         )}
-      </div>
+      </button>
       {isOpen && (
         <ClickOutsideWrapper includeButtonPress={false} onClick={onClose}>
           <TimePickerContent
             timeZone={timeZone}
-            value={isValidTimeRange(value) ? (value as TimeRange) : getDefaultTimeRange()}
+            value={isValidTimeRange(value) ? value : getDefaultTimeRange()}
             onChange={onRangeChange}
-            otherOptions={otherOptions}
             quickOptions={quickOptions}
             onChangeTimeZone={onChangeTimeZone}
             className={styles.content}
@@ -117,42 +118,49 @@ export const TimeRangeInput: FC<TimeRangeInputProps> = ({
 const getStyles = stylesFactory((theme: GrafanaTheme2, disabled = false) => {
   const inputStyles = getInputStyles({ theme, invalid: false });
   return {
-    container: css`
-      display: flex;
-      position: relative;
-    `,
-    content: css`
-      margin-left: 0;
-    `,
+    container: css({
+      display: 'flex',
+      position: 'relative',
+    }),
+    content: css({
+      marginLeft: 0,
+      position: 'absolute',
+      top: '116%',
+      zIndex: theme.zIndex.dropdown,
+    }),
     pickerInput: cx(
       inputStyles.input,
       disabled && inputStyles.inputDisabled,
       inputStyles.wrapper,
-      css`
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        cursor: pointer;
-        padding-right: 0;
-        line-height: ${theme.v1.spacing.formInputHeight - 2}px;
-      `
+      css({
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        cursor: 'pointer',
+        paddingRight: 0,
+        lineHeight: `${theme.spacing.gridSize * 4 - 2}px`,
+      })
     ),
     caretIcon: cx(
       inputStyles.suffix,
-      css`
-        position: relative;
-        margin-left: ${theme.v1.spacing.xs};
-      `
+      css({
+        position: 'relative',
+        top: '-1px',
+        marginLeft: theme.spacing(0.5),
+      })
     ),
-    clearIcon: css`
-      margin-right: ${theme.v1.spacing.xs};
-      &:hover {
-        color: ${theme.v1.colors.linkHover};
-      }
-    `,
-    placeholder: css`
-      color: ${theme.v1.colors.formInputPlaceholderText};
-      opacity: 1;
-    `,
+    clearIcon: css({
+      marginRight: theme.spacing(0.5),
+      '&:hover': {
+        color: theme.colors.text.maxContrast,
+      },
+    }),
+    placeholder: css({
+      color: theme.colors.text.disabled,
+      opacity: 1,
+    }),
+    icon: css({
+      marginRight: theme.spacing(0.5),
+    }),
   };
 });

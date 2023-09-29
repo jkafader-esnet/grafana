@@ -1,21 +1,30 @@
-import React, { useState, HTMLAttributes } from 'react';
-import { PopoverContent } from '../Tooltip/Tooltip';
-import { GrafanaTheme2, SelectableValue } from '@grafana/data';
-import { ToolbarButtonVariant, ToolbarButton, ButtonGroup } from '../Button';
-import { ClickOutsideWrapper } from '../ClickOutsideWrapper/ClickOutsideWrapper';
 import { css } from '@emotion/css';
+import { useButton } from '@react-aria/button';
+import { FocusScope } from '@react-aria/focus';
+import { useMenuTrigger } from '@react-aria/menu';
+import { useMenuTriggerState } from '@react-stately/menu';
+import React, { HTMLAttributes } from 'react';
+
+import { GrafanaTheme2, SelectableValue } from '@grafana/data';
+
 import { useStyles2 } from '../../themes/ThemeContext';
+import { ButtonGroup } from '../Button';
+import { ClickOutsideWrapper } from '../ClickOutsideWrapper/ClickOutsideWrapper';
 import { Menu } from '../Menu/Menu';
 import { MenuItem } from '../Menu/MenuItem';
+import { ToolbarButton, ToolbarButtonVariant } from '../ToolbarButton';
+import { PopoverContent } from '../Tooltip';
 
 export interface Props<T> extends HTMLAttributes<HTMLButtonElement> {
   className?: string;
   options: Array<SelectableValue<T>>;
   value?: SelectableValue<T>;
   onChange: (item: SelectableValue<T>) => void;
+  /** @deprecated use tooltip instead, tooltipContent is not being processed in ToolbarButton*/
   tooltipContent?: PopoverContent;
   narrow?: boolean;
   variant?: ToolbarButtonVariant;
+  tooltip?: string;
 }
 
 /**
@@ -24,50 +33,53 @@ export interface Props<T> extends HTMLAttributes<HTMLButtonElement> {
  */
 const ButtonSelectComponent = <T,>(props: Props<T>) => {
   const { className, options, value, onChange, narrow, variant, ...restProps } = props;
-  const [isOpen, setIsOpen] = useState<boolean>(false);
   const styles = useStyles2(getStyles);
+  const state = useMenuTriggerState({});
 
-  const onCloseMenu = () => {
-    setIsOpen(false);
-  };
-
-  const onToggle = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    event.preventDefault();
-    setIsOpen(!isOpen);
-  };
+  const ref = React.useRef(null);
+  const { menuTriggerProps, menuProps } = useMenuTrigger({}, state, ref);
+  const { buttonProps } = useButton(menuTriggerProps, ref);
 
   const onChangeInternal = (item: SelectableValue<T>) => {
     onChange(item);
-    setIsOpen(false);
+    state.close();
   };
 
   return (
     <ButtonGroup className={styles.wrapper}>
       <ToolbarButton
         className={className}
-        isOpen={isOpen}
-        onClick={onToggle}
+        isOpen={state.isOpen}
         narrow={narrow}
         variant={variant}
+        ref={ref}
+        {...buttonProps}
         {...restProps}
       >
-        {value?.label || value?.value}
+        {value?.label || (value?.value != null ? String(value?.value) : null)}
       </ToolbarButton>
-      {isOpen && (
+      {state.isOpen && (
         <div className={styles.menuWrapper}>
-          <ClickOutsideWrapper onClick={onCloseMenu} parent={document}>
-            <Menu>
-              {options.map((item) => (
-                <MenuItem
-                  key={`${item.value}`}
-                  label={(item.label || item.value) as string}
-                  ariaLabel={(item.label || item.value) as string}
-                  onClick={() => onChangeInternal(item)}
-                  active={item.value === value?.value}
-                />
-              ))}
-            </Menu>
+          <ClickOutsideWrapper onClick={state.close} parent={document} includeButtonPress={false}>
+            <FocusScope contain autoFocus restoreFocus>
+              {/*
+                tabIndex=-1 is needed here to support highlighting text within the menu when using FocusScope
+                see https://github.com/adobe/react-spectrum/issues/1604#issuecomment-781574668
+              */}
+              <Menu tabIndex={-1} onClose={state.close} {...menuProps} autoFocus={!!menuProps.autoFocus}>
+                {options.map((item) => (
+                  <MenuItem
+                    key={`${item.value}`}
+                    label={item.label ?? String(item.value)}
+                    onClick={() => onChangeInternal(item)}
+                    active={item.value === value?.value}
+                    ariaChecked={item.value === value?.value}
+                    ariaLabel={item.ariaLabel || item.label}
+                    role="menuitemradio"
+                  />
+                ))}
+              </Menu>
+            </FocusScope>
           </ClickOutsideWrapper>
         </div>
       )}
@@ -81,15 +93,15 @@ export const ButtonSelect = React.memo(ButtonSelectComponent) as typeof ButtonSe
 
 const getStyles = (theme: GrafanaTheme2) => {
   return {
-    wrapper: css`
-      position: relative;
-      display: inline-flex;
-    `,
-    menuWrapper: css`
-      position: absolute;
-      z-index: ${theme.zIndex.dropdown};
-      top: ${theme.spacing(4)};
-      right: 0;
-    `,
+    wrapper: css({
+      position: 'relative',
+      display: 'inline-flex',
+    }),
+    menuWrapper: css({
+      position: 'absolute',
+      zIndex: theme.zIndex.dropdown,
+      top: theme.spacing(4),
+      right: 0,
+    }),
   };
 };

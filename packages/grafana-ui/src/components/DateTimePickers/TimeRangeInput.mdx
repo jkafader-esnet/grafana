@@ -1,4 +1,4 @@
-import { Story, Preview, Props } from '@storybook/addon-docs/blocks';
+import { Story, Preview, ArgTypes } from '@storybook/blocks';
 import { TimeRangeInput } from './TimeRangeInput';
 
 # TimeRangeInput
@@ -20,7 +20,6 @@ A variant of `TimeRangePicker` for use in forms.
 
 `dateMath.isValid()` from `@grafana/data` can be used to check for a valid time range value.
 
-
 ### Usage
 
 ```jsx
@@ -28,10 +27,11 @@ import { TimeRangeInput } from '@grafana/ui';
 
 <TimeRangeInput
   value={timeRange}
-  onChange={range => console.log('range', range)}
-  onChangeTimeZone={tz => console.log('timezone', tz)}
-/>
+  onChange={(range) => console.log('range', range)}
+  onChangeTimeZone={(tz) => console.log('timezone', tz)}
+/>;
 ```
 
 ### Props
-<Props of={TimeRangeInput} />
+
+<ArgTypes of={TimeRangeInput} />

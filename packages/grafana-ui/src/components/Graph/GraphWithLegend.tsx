@@ -1,18 +1,21 @@
 // Libraries
 
-import React from 'react';
 import { css } from '@emotion/css';
+import React from 'react';
+
 import { GraphSeriesValue } from '@grafana/data';
+import { LegendDisplayMode, LegendPlacement } from '@grafana/schema';
+
+import { stylesFactory } from '../../themes';
+import { CustomScrollbar } from '../CustomScrollbar/CustomScrollbar';
+import { VizLegend } from '../VizLegend/VizLegend';
+import { VizLegendItem } from '../VizLegend/types';
 
 import { Graph, GraphProps } from './Graph';
-import { VizLegendItem } from '../VizLegend/types';
-import { LegendDisplayMode, LegendPlacement } from '../VizLegend/models.gen';
-import { VizLegend } from '../VizLegend/VizLegend';
-import { CustomScrollbar } from '../CustomScrollbar/CustomScrollbar';
-import { stylesFactory } from '../../themes';
 
 export interface GraphWithLegendProps extends GraphProps {
   legendDisplayMode: LegendDisplayMode;
+  legendVisibility: boolean;
   placement: LegendPlacement;
   hideEmpty?: boolean;
   hideZero?: boolean;
@@ -23,18 +26,18 @@ export interface GraphWithLegendProps extends GraphProps {
 }
 
 const getGraphWithLegendStyles = stylesFactory(({ placement }: GraphWithLegendProps) => ({
-  wrapper: css`
-    display: flex;
-    flex-direction: ${placement === 'bottom' ? 'column' : 'row'};
-  `,
-  graphContainer: css`
-    min-height: 65%;
-    flex-grow: 1;
-  `,
-  legendContainer: css`
-    padding: 10px 0;
-    max-height: ${placement === 'bottom' ? '35%' : 'none'};
-  `,
+  wrapper: css({
+    display: 'flex',
+    flexDirection: placement === 'bottom' ? 'column' : 'row',
+  }),
+  graphContainer: css({
+    minHeight: '65%',
+    flexGrow: 1,
+  }),
+  legendContainer: css({
+    padding: '10px 0',
+    maxHeight: placement === 'bottom' ? '35%' : 'none',
+  }),
 }));
 
 const shouldHideLegendItem = (data: GraphSeriesValue[][], hideEmpty = false, hideZero = false) => {
@@ -44,7 +47,7 @@ const shouldHideLegendItem = (data: GraphSeriesValue[][], hideEmpty = false, hid
   return (hideEmpty && isNullOnlySeries) || (hideZero && isZeroOnlySeries);
 };
 
-export const GraphWithLegend: React.FunctionComponent<GraphWithLegendProps> = (props: GraphWithLegendProps) => {
+export const GraphWithLegend = (props: GraphWithLegendProps) => {
   const {
     series,
     timeRange,
@@ -56,6 +59,7 @@ export const GraphWithLegend: React.FunctionComponent<GraphWithLegendProps> = (p
     sortLegendBy,
     sortLegendDesc,
     legendDisplayMode,
+    legendVisibility,
     placement,
     onSeriesToggle,
     onToggleSort,
@@ -104,7 +108,7 @@ export const GraphWithLegend: React.FunctionComponent<GraphWithLegendProps> = (p
         </Graph>
       </div>
 
-      {legendDisplayMode !== LegendDisplayMode.Hidden && (
+      {legendVisibility && (
         <div className={legendContainer}>
           <CustomScrollbar hideHorizontalTrack>
             <VizLegend

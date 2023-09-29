@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
-import { usePopper } from 'react-popper';
 import { css, cx } from '@emotion/css';
-import { PlotSelection, usePlotContext, useStyles2, useTheme2, Portal, DEFAULT_ANNOTATION_COLOR } from '@grafana/ui';
+import React, { HTMLAttributes, useState } from 'react';
+import { usePopper } from 'react-popper';
+
 import { colorManipulator, DataFrame, getDisplayProcessor, GrafanaTheme2, TimeZone } from '@grafana/data';
+import { PlotSelection, useStyles2, useTheme2, Portal, DEFAULT_ANNOTATION_COLOR } from '@grafana/ui';
+
 import { getCommonAnnotationStyles } from '../styles';
+import { AnnotationsDataFrameViewDTO } from '../types';
+
 import { AnnotationEditorForm } from './AnnotationEditorForm';
 
-interface AnnotationEditorProps {
+interface AnnotationEditorProps extends HTMLAttributes<HTMLDivElement> {
   data: DataFrame;
   timeZone: TimeZone;
   selection: PlotSelection;
@@ -15,18 +19,18 @@ interface AnnotationEditorProps {
   annotation?: AnnotationsDataFrameViewDTO;
 }
 
-export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({
+export const AnnotationEditor = ({
   onDismiss,
   onSave,
   timeZone,
   data,
   selection,
   annotation,
-}) => {
+  style,
+}: AnnotationEditorProps) => {
   const theme = useTheme2();
   const styles = useStyles2(getStyles);
   const commonStyles = useStyles2(getCommonAnnotationStyles);
-  const plotCtx = usePlotContext();
   const [popperTrigger, setPopperTrigger] = useState<HTMLDivElement | null>(null);
   const [editorPopover, setEditorPopover] = useState<HTMLDivElement | null>(null);
 
@@ -43,11 +47,6 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({
     ],
   });
 
-  if (!plotCtx || !plotCtx.getCanvasBoundingBox()) {
-    return null;
-  }
-  const canvasBbox = plotCtx.getCanvasBoundingBox();
-
   let xField = data.fields[0];
   if (!xField) {
     return null;
@@ -59,13 +58,7 @@ export const AnnotationEditor: React.FC<AnnotationEditorProps> = ({
     <Portal>
       <>
         <div // div overlay matching uPlot canvas bbox
-          className={css`
-            position: absolute;
-            top: ${canvasBbox!.top}px;
-            left: ${canvasBbox!.left}px;
-            width: ${canvasBbox!.width}px;
-            height: ${canvasBbox!.height}px;
-          `}
+          style={style}
         >
           <div // Annotation marker
             className={cx(

@@ -1,7 +1,8 @@
 package opentsdb
 
 import (
-	"io/ioutil"
+	"context"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,11 +19,11 @@ func TestOpenTsdbExecutor(t *testing.T) {
 	service := &Service{}
 
 	t.Run("create request", func(t *testing.T) {
-		req, err := service.createRequest(&datasourceInfo{}, OpenTsdbQuery{})
+		req, err := service.createRequest(context.Background(), logger, &datasourceInfo{}, OpenTsdbQuery{})
 		require.NoError(t, err)
 
 		assert.Equal(t, "POST", req.Method)
-		body, err := ioutil.ReadAll(req.Body)
+		body, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
 
 		testBody := "{\"start\":0,\"end\":0,\"queries\":null}"
@@ -32,7 +33,7 @@ func TestOpenTsdbExecutor(t *testing.T) {
 	t.Run("Parse response should handle invalid JSON", func(t *testing.T) {
 		response := `{ invalid }`
 
-		result, err := service.parseResponse(&http.Response{Body: ioutil.NopCloser(strings.NewReader(response))})
+		result, err := service.parseResponse(logger, &http.Response{Body: io.NopCloser(strings.NewReader(response))})
 		require.Nil(t, result)
 		require.Error(t, err)
 	})
@@ -44,6 +45,10 @@ func TestOpenTsdbExecutor(t *testing.T) {
 				"metric": "test",
 				"dps": {
 					"1405544146": 50.0
+				},
+				"tags" : {
+					"env": "prod",
+					"app": "grafana"
 				}
 			}
 		]`
@@ -52,13 +57,13 @@ func TestOpenTsdbExecutor(t *testing.T) {
 			data.NewField("time", nil, []time.Time{
 				time.Date(2014, 7, 16, 20, 55, 46, 0, time.UTC),
 			}),
-			data.NewField("value", nil, []float64{
+			data.NewField("value", map[string]string{"env": "prod", "app": "grafana"}, []float64{
 				50}),
 		)
 
-		resp := http.Response{Body: ioutil.NopCloser(strings.NewReader(response))}
+		resp := http.Response{Body: io.NopCloser(strings.NewReader(response))}
 		resp.StatusCode = 200
-		result, err := service.parseResponse(&resp)
+		result, err := service.parseResponse(logger, &resp)
 		require.NoError(t, err)
 
 		frame := result.Responses["A"]
@@ -158,7 +163,7 @@ func TestOpenTsdbExecutor(t *testing.T) {
 		require.Equal(t, "avg", metric["aggregator"])
 		require.Nil(t, metric["downsample"])
 
-		metricTags := metric["tags"].(map[string]interface{})
+		metricTags := metric["tags"].(map[string]any)
 		require.Len(t, metricTags, 2)
 		require.Equal(t, "prod", metricTags["env"])
 		require.Equal(t, "grafana", metricTags["app"])
@@ -188,14 +193,14 @@ func TestOpenTsdbExecutor(t *testing.T) {
 		require.Equal(t, "cpu.average.percent", metric["metric"])
 		require.Equal(t, "avg", metric["aggregator"])
 
-		metricTags := metric["tags"].(map[string]interface{})
+		metricTags := metric["tags"].(map[string]any)
 		require.Len(t, metricTags, 2)
 		require.Equal(t, "prod", metricTags["env"])
 		require.Equal(t, "grafana", metricTags["app"])
 		require.Nil(t, metricTags["ip"])
 
 		require.True(t, metric["rate"].(bool))
-		require.False(t, metric["rateOptions"].(map[string]interface{})["counter"].(bool))
+		require.False(t, metric["rateOptions"].(map[string]any)["counter"].(bool))
 	})
 
 	t.Run("Build metric with rate and counter enabled", func(t *testing.T) {
@@ -223,14 +228,14 @@ func TestOpenTsdbExecutor(t *testing.T) {
 		require.Equal(t, "cpu.average.percent", metric["metric"])
 		require.Equal(t, "avg", metric["aggregator"])
 
-		metricTags := metric["tags"].(map[string]interface{})
+		metricTags := metric["tags"].(map[string]any)
 		require.Len(t, metricTags, 2)
 		require.Equal(t, "prod", metricTags["env"])
 		require.Equal(t, "grafana", metricTags["app"])
 		require.Nil(t, metricTags["ip"])
 
 		require.True(t, metric["rate"].(bool))
-		metricRateOptions := metric["rateOptions"].(map[string]interface{})
+		metricRateOptions := metric["rateOptions"].(map[string]any)
 		require.Len(t, metricRateOptions, 3)
 		require.True(t, metricRateOptions["counter"].(bool))
 		require.Equal(t, float64(45), metricRateOptions["counterMax"])

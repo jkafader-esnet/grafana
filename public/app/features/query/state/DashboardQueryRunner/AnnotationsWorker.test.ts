@@ -1,17 +1,25 @@
 import { Subject, throwError } from 'rxjs';
-import { setDataSourceSrv } from '@grafana/runtime';
-
-import { AnnotationsWorker } from './AnnotationsWorker';
-import * as annotationsSrv from '../../../annotations/annotations_srv';
-import { getDefaultOptions, LEGACY_DS_NAME, NEXT_GEN_DS_NAME, toAsyncOfResult } from './testHelpers';
-import { silenceConsoleOutput } from '../../../../../test/core/utils/silenceConsoleOutput';
-import { createDashboardQueryRunner, setDashboardQueryRunnerFactory } from './DashboardQueryRunner';
-import { emptyResult } from './utils';
-import { DashboardQueryRunnerOptions, DashboardQueryRunnerWorkerResult } from './types';
-import { AnnotationQuery } from '@grafana/data';
 import { delay } from 'rxjs/operators';
 
-function getTestContext() {
+import { AnnotationQuery } from '@grafana/data';
+import { DataSourceSrv, setDataSourceSrv, config } from '@grafana/runtime';
+import { DashboardModel } from 'app/features/dashboard/state';
+
+import { silenceConsoleOutput } from '../../../../../test/core/utils/silenceConsoleOutput';
+import * as annotationsSrv from '../../../annotations/executeAnnotationQuery';
+
+import { AnnotationsWorker } from './AnnotationsWorker';
+import {
+  createDashboardQueryRunner,
+  DashboardQueryRunnerFactoryArgs,
+  setDashboardQueryRunnerFactory,
+} from './DashboardQueryRunner';
+import { PublicAnnotationsDataSource } from './PublicAnnotationsDataSource';
+import { getDefaultOptions, LEGACY_DS_NAME, NEXT_GEN_DS_NAME, toAsyncOfResult } from './testHelpers';
+import { DashboardQueryRunnerOptions, DashboardQueryRunnerWorkerResult } from './types';
+import { emptyResult } from './utils';
+
+function getTestContext(dataSourceSrvRejects = false) {
   jest.clearAllMocks();
   const cancellations = new Subject<AnnotationQuery>();
   setDashboardQueryRunnerFactory(() => ({
@@ -21,13 +29,16 @@ function getTestContext() {
     cancellations: () => cancellations,
     destroy: () => undefined,
   }));
-  createDashboardQueryRunner({} as any);
+  createDashboardQueryRunner({} as DashboardQueryRunnerFactoryArgs);
   const executeAnnotationQueryMock = jest
     .spyOn(annotationsSrv, 'executeAnnotationQuery')
     .mockReturnValue(toAsyncOfResult({ events: [{ id: 'NextGen' }] }));
   const annotationQueryMock = jest.fn().mockResolvedValue([{ id: 'Legacy' }]);
-  const dataSourceSrvMock: any = {
+  const dataSourceSrvMock = {
     get: async (name: string) => {
+      if (dataSourceSrvRejects) {
+        return Promise.reject(`Could not find datasource with name: ${name}`);
+      }
       if (name === LEGACY_DS_NAME) {
         return {
           annotationQuery: annotationQueryMock,
@@ -42,7 +53,7 @@ function getTestContext() {
 
       return {};
     },
-  };
+  } as DataSourceSrv;
   setDataSourceSrv(dataSourceSrvMock);
   const options = getDefaultOptions();
 
@@ -64,11 +75,13 @@ function expectOnResults(args: {
         done();
       } catch (err) {
         subscription.unsubscribe();
-        done.fail(err);
+        done(err);
       }
     },
   });
 }
+
+jest.mock('./PublicAnnotationsDataSource');
 
 describe('AnnotationsWorker', () => {
   const worker = new AnnotationsWorker();
@@ -83,7 +96,7 @@ describe('AnnotationsWorker', () => {
 
   describe('when canWork is called with incorrect props', () => {
     it('then it should return false', () => {
-      const dashboard: any = { annotations: { list: [] } };
+      const dashboard = { annotations: { list: [] } } as unknown as DashboardModel;
       const options = { ...getDefaultOptions(), dashboard };
 
       expect(worker.canWork(options)).toBe(false);
@@ -92,7 +105,7 @@ describe('AnnotationsWorker', () => {
 
   describe('when run is called with incorrect props', () => {
     it('then it should return the correct results', async () => {
-      const dashboard: any = { annotations: { list: [] } };
+      const dashboard = { annotations: { list: [] } } as unknown as DashboardModel;
       const options = { ...getDefaultOptions(), dashboard };
 
       await expect(worker.work(options)).toEmitValues([{ alertStates: [], annotations: [] }]);
@@ -269,6 +282,40 @@ describe('AnnotationsWorker', () => {
         expect(result).toEqual({ alertStates: [], annotations: [] });
         expect(executeAnnotationQueryMock).toHaveBeenCalledTimes(1);
         expect(annotationQueryMock).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  describe('when run is called with correct props and call to datasourceSrv fails', () => {
+    silenceConsoleOutput();
+    it('then it should return the correct results', async () => {
+      const { options, executeAnnotationQueryMock, annotationQueryMock } = getTestContext(true);
+
+      await expect(worker.work(options)).toEmitValuesWith((received) => {
+        expect(received).toHaveLength(1);
+        const result = received[0];
+        expect(result).toEqual({ alertStates: [], annotations: [] });
+        expect(executeAnnotationQueryMock).not.toHaveBeenCalled();
+        expect(annotationQueryMock).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('public dashboard scope', () => {
+    test('does not call PublicAnnotationsDataSource when it is not a public dashboard', async () => {
+      const { options, annotationQueryMock } = getTestContext();
+      await expect(worker.work(options)).toEmitValuesWith(() => {
+        expect(PublicAnnotationsDataSource).not.toHaveBeenCalled();
+        expect(annotationQueryMock).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    test('calls PublicAnnotationsDataSource when it is a public dashboard', async () => {
+      config.publicDashboardAccessToken = 'abc123';
+      const { options, annotationQueryMock } = getTestContext(true);
+      await expect(worker.work(options)).toEmitValuesWith(() => {
+        expect(PublicAnnotationsDataSource).toHaveBeenCalledTimes(1);
+        expect(annotationQueryMock).not.toHaveBeenCalled();
       });
     });
   });

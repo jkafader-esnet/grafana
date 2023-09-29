@@ -1,8 +1,14 @@
 //DOCS: https://prometheus.io/docs/alerting/latest/configuration/
 
+import { DataSourceJsonData } from '@grafana/data';
+
 export type AlertManagerCortexConfig = {
   template_files: Record<string, string>;
   alertmanager_config: AlertmanagerConfig;
+  /** { [name]: provenance } */
+  template_file_provenances?: Record<string, string>;
+  last_applied?: string;
+  id?: number;
 };
 
 export type TLSConfig = {
@@ -64,41 +70,57 @@ export type GrafanaManagedReceiverConfig = {
   uid?: string;
   disableResolveMessage: boolean;
   secureFields?: Record<string, boolean>;
-  secureSettings?: Record<string, unknown>;
-  settings: Record<string, unknown>;
+  secureSettings?: Record<string, any>;
+  settings: Record<string, any>;
   type: string;
   name: string;
   updated?: string;
   created?: string;
+  provenance?: string;
 };
 
-export type Receiver = {
+export interface GrafanaManagedContactPoint {
+  name: string;
+  grafana_managed_receiver_configs?: GrafanaManagedReceiverConfig[];
+}
+
+export interface AlertmanagerReceiver {
   name: string;
 
   email_configs?: EmailConfig[];
-  pagerduty_configs?: unknown[];
-  pushover_configs?: unknown[];
-  slack_configs?: unknown[];
-  opsgenie_configs?: unknown[];
   webhook_configs?: WebhookConfig[];
-  victorops_configs?: unknown[];
-  wechat_configs?: unknown[];
-  grafana_managed_receiver_configs?: GrafanaManagedReceiverConfig[];
-  [key: string]: unknown;
-};
+
+  // this is supposedly to support any *_configs
+  [key: `${string}_configs`]: any[] | undefined;
+}
+
+export type Receiver = GrafanaManagedContactPoint | AlertmanagerReceiver;
+
+export type ObjectMatcher = [name: string, operator: MatcherOperator, value: string];
 
 export type Route = {
   receiver?: string;
   group_by?: string[];
   continue?: boolean;
+  object_matchers?: ObjectMatcher[];
   matchers?: string[];
+  /** @deprecated use `object_matchers` */
   match?: Record<string, string>;
+  /** @deprecated use `object_matchers` */
   match_re?: Record<string, string>;
   group_wait?: string;
   group_interval?: string;
   repeat_interval?: string;
   routes?: Route[];
+  mute_time_intervals?: string[];
+  /** only the root policy might have a provenance field defined */
+  provenance?: string;
 };
+
+export interface RouteWithID extends Route {
+  id: string;
+  routes?: RouteWithID[];
+}
 
 export type InhibitRule = {
   target_match: Record<string, string>;
@@ -134,6 +156,10 @@ export type AlertmanagerConfig = {
   route?: Route;
   inhibit_rules?: InhibitRule[];
   receivers?: Receiver[];
+  mute_time_intervals?: MuteTimeInterval[];
+  /** { [name]: provenance } */
+  muteTimeProvenances?: Record<string, string>;
+  last_applied?: boolean;
 };
 
 export type Matcher = {
@@ -194,7 +220,7 @@ export type AlertmanagerAlert = {
   receivers: [
     {
       name: string;
-    }
+    },
   ];
   fingerprint: string;
   status: {
@@ -225,4 +251,83 @@ export interface AlertmanagerStatus {
     revision: string;
     version: string;
   };
+}
+
+export type TestReceiversAlert = Pick<AlertmanagerAlert, 'annotations' | 'labels'>;
+export type TestTemplateAlert = Pick<AlertmanagerAlert, 'annotations' | 'labels' | 'startsAt' | 'endsAt'>;
+
+export interface TestReceiversPayload {
+  receivers?: Receiver[];
+  alert?: TestReceiversAlert;
+}
+
+interface TestReceiversResultGrafanaReceiverConfig {
+  name: string;
+  uid?: string;
+  error?: string;
+  status: 'ok' | 'failed';
+}
+
+interface TestReceiversResultReceiver {
+  name: string;
+  grafana_managed_receiver_configs: TestReceiversResultGrafanaReceiverConfig[];
+}
+export interface TestReceiversResult {
+  notified_at: string;
+  receivers: TestReceiversResultReceiver[];
+}
+
+export interface ExternalAlertmanagers {
+  activeAlertManagers: AlertmanagerUrl[];
+  droppedAlertManagers: AlertmanagerUrl[];
+}
+
+export interface AlertmanagerUrl {
+  url: string;
+}
+
+export interface ExternalAlertmanagersResponse {
+  data: ExternalAlertmanagers;
+}
+
+export enum AlertmanagerChoice {
+  Internal = 'internal',
+  External = 'external',
+  All = 'all',
+}
+
+export interface ExternalAlertmanagerConfig {
+  alertmanagersChoice: AlertmanagerChoice;
+}
+
+export enum AlertManagerImplementation {
+  cortex = 'cortex',
+  mimir = 'mimir',
+  prometheus = 'prometheus',
+}
+
+export interface TimeRange {
+  /** Times are in format `HH:MM` in UTC */
+  start_time: string;
+  end_time: string;
+}
+export interface TimeInterval {
+  times?: TimeRange[];
+  weekdays?: string[];
+  days_of_month?: string[];
+  months?: string[];
+  years?: string[];
+  /** IANA TZ identifier like "Europe/Brussels", also supports "Local" or "UTC" */
+  location?: string;
+}
+
+export type MuteTimeInterval = {
+  name: string;
+  time_intervals: TimeInterval[];
+  provenance?: string;
+};
+
+export interface AlertManagerDataSourceJsonData extends DataSourceJsonData {
+  implementation?: AlertManagerImplementation;
+  handleGrafanaManagedAlerts?: boolean;
 }

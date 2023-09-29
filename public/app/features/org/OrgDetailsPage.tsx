@@ -1,16 +1,18 @@
 import React, { PureComponent } from 'react';
-import { hot } from 'react-hot-loader';
 import { connect } from 'react-redux';
-import { NavModel } from '@grafana/data';
 
-import Page from 'app/core/components/Page/Page';
-import OrgProfile from './OrgProfile';
-import SharedPreferences from 'app/core/components/SharedPreferences/SharedPreferences';
-import { loadOrganization, updateOrganization } from './state/actions';
-import { Organization, StoreState } from 'app/types';
-import { getNavModel } from 'app/core/selectors/navModel';
-import { setOrganizationName } from './state/reducers';
+import { NavModel } from '@grafana/data';
 import { VerticalGroup } from '@grafana/ui';
+import { Page } from 'app/core/components/Page/Page';
+import SharedPreferences from 'app/core/components/SharedPreferences/SharedPreferences';
+import { appEvents, contextSrv } from 'app/core/core';
+import { getNavModel } from 'app/core/selectors/navModel';
+import { AccessControlAction, Organization, StoreState } from 'app/types';
+import { ShowConfirmModalEvent } from 'app/types/events';
+
+import OrgProfile from './OrgProfile';
+import { loadOrganization, updateOrganization } from './state/actions';
+import { setOrganizationName } from './state/reducers';
 
 export interface Props {
   navModel: NavModel;
@@ -30,17 +32,42 @@ export class OrgDetailsPage extends PureComponent<Props> {
     this.props.updateOrganization();
   };
 
+  handleConfirm = () => {
+    return new Promise<boolean>((resolve) => {
+      appEvents.publish(
+        new ShowConfirmModalEvent({
+          title: 'Confirm preferences update',
+          text: 'This will update the preferences for the whole organization. Are you sure you want to update the preferences?',
+          yesText: 'Save',
+          yesButtonVariant: 'primary',
+          onConfirm: async () => resolve(true),
+          onDismiss: async () => resolve(false),
+        })
+      );
+    });
+  };
+
   render() {
     const { navModel, organization } = this.props;
     const isLoading = Object.keys(organization).length === 0;
+    const canReadOrg = contextSrv.hasPermission(AccessControlAction.OrgsRead);
+    const canReadPreferences = contextSrv.hasPermission(AccessControlAction.OrgsPreferencesRead);
+    const canWritePreferences = contextSrv.hasPermission(AccessControlAction.OrgsPreferencesWrite);
 
     return (
       <Page navModel={navModel}>
         <Page.Contents isLoading={isLoading}>
           {!isLoading && (
             <VerticalGroup spacing="lg">
-              <OrgProfile onSubmit={this.onUpdateOrganization} orgName={organization.name} />
-              <SharedPreferences resourceUri="org" />
+              {canReadOrg && <OrgProfile onSubmit={this.onUpdateOrganization} orgName={organization.name} />}
+              {canReadPreferences && (
+                <SharedPreferences
+                  resourceUri="org"
+                  disabled={!canWritePreferences}
+                  preferenceType="org"
+                  onConfirm={this.handleConfirm}
+                />
+              )}
             </VerticalGroup>
           )}
         </Page.Contents>
@@ -62,4 +89,4 @@ const mapDispatchToProps = {
   updateOrganization,
 };
 
-export default hot(module)(connect(mapStateToProps, mapDispatchToProps)(OrgDetailsPage));
+export default connect(mapStateToProps, mapDispatchToProps)(OrgDetailsPage);

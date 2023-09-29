@@ -3,6 +3,7 @@ package sqleng
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,111 +16,153 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/data/sqlutil"
-	"github.com/grafana/grafana/pkg/components/simplejson"
-	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/plugins"
-	"github.com/grafana/grafana/pkg/tsdb/interval"
 	"xorm.io/core"
 	"xorm.io/xorm"
+
+	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/tsdb/intervalv2"
+	"github.com/grafana/grafana/pkg/util/errutil"
 )
+
+// XormDriverMu is used to allow safe concurrent registering and querying of drivers in xorm
+var XormDriverMu sync.RWMutex
 
 // MetaKeyExecutedQueryString is the key where the executed query should get stored
 const MetaKeyExecutedQueryString = "executedQueryString"
 
-var ErrConnectionFailed = errors.New("failed to connect to server - please inspect Grafana server log for details")
+var ErrConnectionFailed = errutil.Internal("sqleng.connectionError")
 
 // SQLMacroEngine interpolates macros into sql. It takes in the Query to have access to query context and
 // timeRange to be able to generate queries that use from and to.
 type SQLMacroEngine interface {
-	Interpolate(query plugins.DataSubQuery, timeRange plugins.DataTimeRange, sql string) (string, error)
+	Interpolate(query *backend.DataQuery, timeRange backend.TimeRange, sql string) (string, error)
 }
 
 // SqlQueryResultTransformer transforms a query result row to RowValues with proper types.
 type SqlQueryResultTransformer interface {
 	// TransformQueryError transforms a query error.
-	TransformQueryError(err error) error
-
+	TransformQueryError(logger log.Logger, err error) error
 	GetConverterList() []sqlutil.StringConverter
 }
 
-type engineCacheType struct {
-	cache    map[int64]*xorm.Engine
-	versions map[int64]int
-	sync.Mutex
-}
-
-var engineCache = engineCacheType{
-	cache:    make(map[int64]*xorm.Engine),
-	versions: make(map[int64]int),
-}
-
-var sqlIntervalCalculator = interval.NewCalculator()
+var sqlIntervalCalculator = intervalv2.NewCalculator()
 
 // NewXormEngine is an xorm.Engine factory, that can be stubbed by tests.
+//
 //nolint:gocritic
 var NewXormEngine = func(driverName string, connectionString string) (*xorm.Engine, error) {
 	return xorm.NewEngine(driverName, connectionString)
 }
 
-type dataPlugin struct {
+type JsonData struct {
+	MaxOpenConns            int    `json:"maxOpenConns"`
+	MaxIdleConns            int    `json:"maxIdleConns"`
+	ConnMaxLifetime         int    `json:"connMaxLifetime"`
+	ConnectionTimeout       int    `json:"connectionTimeout"`
+	Timescaledb             bool   `json:"timescaledb"`
+	Mode                    string `json:"sslmode"`
+	ConfigurationMethod     string `json:"tlsConfigurationMethod"`
+	TlsSkipVerify           bool   `json:"tlsSkipVerify"`
+	RootCertFile            string `json:"sslRootCertFile"`
+	CertFile                string `json:"sslCertFile"`
+	CertKeyFile             string `json:"sslKeyFile"`
+	Timezone                string `json:"timezone"`
+	Encrypt                 string `json:"encrypt"`
+	Servername              string `json:"servername"`
+	TimeInterval            string `json:"timeInterval"`
+	Database                string `json:"database"`
+	SecureDSProxy           bool   `json:"enableSecureSocksProxy"`
+	SecureDSProxyUsername   string `json:"secureSocksProxyUsername"`
+	AllowCleartextPasswords bool   `json:"allowCleartextPasswords"`
+	AuthenticationType      string `json:"authenticationType"`
+}
+
+type DataSourceInfo struct {
+	JsonData                JsonData
+	URL                     string
+	User                    string
+	Database                string
+	ID                      int64
+	Updated                 time.Time
+	UID                     string
+	DecryptedSecureJSONData map[string]string
+}
+
+// Defaults for the xorm connection pool
+type DefaultConnectionInfo struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime int
+}
+
+type DataPluginConfiguration struct {
+	DriverName        string
+	DSInfo            DataSourceInfo
+	ConnectionString  string
+	TimeColumnNames   []string
+	MetricColumnTypes []string
+	RowLimit          int64
+}
+
+type DataSourceHandler struct {
 	macroEngine            SQLMacroEngine
 	queryResultTransformer SqlQueryResultTransformer
 	engine                 *xorm.Engine
 	timeColumnNames        []string
 	metricColumnTypes      []string
 	log                    log.Logger
+	dsInfo                 DataSourceInfo
+	rowLimit               int64
+	userError              string
 }
 
-type DataPluginConfiguration struct {
-	DriverName        string
-	Datasource        *models.DataSource
-	ConnectionString  string
-	TimeColumnNames   []string
-	MetricColumnTypes []string
+type QueryJson struct {
+	RawSql       string  `json:"rawSql"`
+	Fill         bool    `json:"fill"`
+	FillInterval float64 `json:"fillInterval"`
+	FillMode     string  `json:"fillMode"`
+	FillValue    float64 `json:"fillValue"`
+	Format       string  `json:"format"`
 }
 
-func (e *dataPlugin) transformQueryError(err error) error {
+func (e *DataSourceHandler) TransformQueryError(logger log.Logger, err error) error {
 	// OpError is the error type usually returned by functions in the net
 	// package. It describes the operation, network type, and address of
 	// an error. We log this error rather than return it to the client
 	// for security purposes.
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
-		e.log.Error("query error", "err", err)
-		return ErrConnectionFailed
+		logger.Error("Query error", "err", err)
+		return ErrConnectionFailed.Errorf("failed to connect to server - %s", e.userError)
 	}
 
-	return e.queryResultTransformer.TransformQueryError(err)
+	return e.queryResultTransformer.TransformQueryError(logger, err)
 }
 
-// NewDataPlugin returns a new plugins.DataPlugin
-//nolint: staticcheck // plugins.DataPlugin deprecated
-func NewDataPlugin(config DataPluginConfiguration, queryResultTransformer SqlQueryResultTransformer,
-	macroEngine SQLMacroEngine, log log.Logger) (plugins.DataPlugin, error) {
-	plugin := dataPlugin{
+func NewQueryDataHandler(cfg *setting.Cfg, config DataPluginConfiguration, queryResultTransformer SqlQueryResultTransformer,
+	macroEngine SQLMacroEngine, log log.Logger) (*DataSourceHandler, error) {
+	log.Debug("Creating engine...")
+	defer func() {
+		log.Debug("Engine created")
+	}()
+
+	queryDataHandler := DataSourceHandler{
 		queryResultTransformer: queryResultTransformer,
 		macroEngine:            macroEngine,
 		timeColumnNames:        []string{"time"},
 		log:                    log,
+		dsInfo:                 config.DSInfo,
+		rowLimit:               config.RowLimit,
+		userError:              cfg.UserFacingDefaultError,
 	}
 
 	if len(config.TimeColumnNames) > 0 {
-		plugin.timeColumnNames = config.TimeColumnNames
+		queryDataHandler.timeColumnNames = config.TimeColumnNames
 	}
 
 	if len(config.MetricColumnTypes) > 0 {
-		plugin.metricColumnTypes = config.MetricColumnTypes
-	}
-
-	engineCache.Lock()
-	defer engineCache.Unlock()
-
-	if engine, present := engineCache.cache[config.Datasource.Id]; present {
-		if version := engineCache.versions[config.Datasource.Id]; version == config.Datasource.Version {
-			plugin.engine = engine
-			return &plugin, nil
-		}
+		queryDataHandler.metricColumnTypes = config.MetricColumnTypes
 	}
 
 	engine, err := NewXormEngine(config.DriverName, config.ConnectionString)
@@ -127,106 +170,118 @@ func NewDataPlugin(config DataPluginConfiguration, queryResultTransformer SqlQue
 		return nil, err
 	}
 
-	maxOpenConns := config.Datasource.JsonData.Get("maxOpenConns").MustInt(0)
-	engine.SetMaxOpenConns(maxOpenConns)
-	maxIdleConns := config.Datasource.JsonData.Get("maxIdleConns").MustInt(2)
-	engine.SetMaxIdleConns(maxIdleConns)
-	connMaxLifetime := config.Datasource.JsonData.Get("connMaxLifetime").MustInt(14400)
-	engine.SetConnMaxLifetime(time.Duration(connMaxLifetime) * time.Second)
+	engine.SetMaxOpenConns(config.DSInfo.JsonData.MaxOpenConns)
+	engine.SetMaxIdleConns(config.DSInfo.JsonData.MaxIdleConns)
+	engine.SetConnMaxLifetime(time.Duration(config.DSInfo.JsonData.ConnMaxLifetime) * time.Second)
 
-	engineCache.versions[config.Datasource.Id] = config.Datasource.Version
-	engineCache.cache[config.Datasource.Id] = engine
-	plugin.engine = engine
-
-	return &plugin, nil
+	queryDataHandler.engine = engine
+	return &queryDataHandler, nil
 }
 
-const rowLimit = 1000000
+type DBDataResponse struct {
+	dataResponse backend.DataResponse
+	refID        string
+}
 
-// DataQuery queries for data.
-//nolint: staticcheck // plugins.DataPlugin deprecated
-func (e *dataPlugin) DataQuery(ctx context.Context, dsInfo *models.DataSource,
-	queryContext plugins.DataQuery) (plugins.DataResponse, error) {
-	ch := make(chan plugins.DataQueryResult, len(queryContext.Queries))
+func (e *DataSourceHandler) Dispose() {
+	e.log.Debug("Disposing engine...")
+	if e.engine != nil {
+		if err := e.engine.Close(); err != nil {
+			e.log.Error("Failed to dispose engine", "error", err)
+		}
+	}
+	e.log.Debug("Engine disposed")
+}
+
+func (e *DataSourceHandler) Ping() error {
+	return e.engine.Ping()
+}
+
+func (e *DataSourceHandler) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	result := backend.NewQueryDataResponse()
+	ch := make(chan DBDataResponse, len(req.Queries))
 	var wg sync.WaitGroup
 	// Execute each query in a goroutine and wait for them to finish afterwards
-	for _, query := range queryContext.Queries {
-		if query.Model.Get("rawSql").MustString() == "" {
+	for _, query := range req.Queries {
+		queryjson := QueryJson{
+			Fill:   false,
+			Format: "time_series",
+		}
+		err := json.Unmarshal(query.JSON, &queryjson)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshal query json: %w", err)
+		}
+		if queryjson.RawSql == "" {
 			continue
 		}
 
 		wg.Add(1)
-		go e.executeQuery(query, &wg, queryContext, ch)
+		go e.executeQuery(query, &wg, ctx, ch, queryjson)
 	}
 
 	wg.Wait()
 
 	// Read results from channels
 	close(ch)
-	result := plugins.DataResponse{
-		Results: make(map[string]plugins.DataQueryResult),
-	}
+	result.Responses = make(map[string]backend.DataResponse)
 	for queryResult := range ch {
-		result.Results[queryResult.RefID] = queryResult
+		result.Responses[queryResult.refID] = queryResult.dataResponse
 	}
 
 	return result, nil
 }
 
-//nolint: staticcheck,gocyclo // plugins.DataQueryResult deprecated
-func (e *dataPlugin) executeQuery(query plugins.DataSubQuery, wg *sync.WaitGroup, queryContext plugins.DataQuery,
-	ch chan plugins.DataQueryResult) {
+func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitGroup, queryContext context.Context,
+	ch chan DBDataResponse, queryJson QueryJson) {
 	defer wg.Done()
-
-	queryResult := plugins.DataQueryResult{
-		Meta:  simplejson.New(),
-		RefID: query.RefID,
+	queryResult := DBDataResponse{
+		dataResponse: backend.DataResponse{},
+		refID:        query.RefID,
 	}
+
+	logger := e.log.FromContext(queryContext)
 
 	defer func() {
 		if r := recover(); r != nil {
-			e.log.Error("executeQuery panic", "error", r, "stack", log.Stack(1))
+			logger.Error("ExecuteQuery panic", "error", r, "stack", log.Stack(1))
 			if theErr, ok := r.(error); ok {
-				queryResult.Error = theErr
+				queryResult.dataResponse.Error = theErr
 			} else if theErrString, ok := r.(string); ok {
-				queryResult.Error = fmt.Errorf(theErrString)
+				queryResult.dataResponse.Error = fmt.Errorf(theErrString)
 			} else {
-				queryResult.Error = fmt.Errorf("unexpected error, see the server log for details")
+				queryResult.dataResponse.Error = fmt.Errorf("unexpected error - %s", e.userError)
 			}
 			ch <- queryResult
 		}
 	}()
 
-	rawSQL := query.Model.Get("rawSql").MustString()
-	if rawSQL == "" {
+	if queryJson.RawSql == "" {
 		panic("Query model property rawSql should not be empty at this point")
 	}
-	var timeRange plugins.DataTimeRange
-	if queryContext.TimeRange != nil {
-		timeRange = *queryContext.TimeRange
-	}
+
+	timeRange := query.TimeRange
 
 	errAppendDebug := func(frameErr string, err error, query string) {
 		var emptyFrame data.Frame
 		emptyFrame.SetMeta(&data.FrameMeta{
 			ExecutedQueryString: query,
 		})
-		queryResult.Error = fmt.Errorf("%s: %w", frameErr, err)
-		queryResult.Dataframes = plugins.NewDecodedDataFrames(data.Frames{&emptyFrame})
+		queryResult.dataResponse.Error = fmt.Errorf("%s: %w", frameErr, err)
+		queryResult.dataResponse.Frames = data.Frames{&emptyFrame}
 		ch <- queryResult
 	}
 
 	// global substitutions
-	interpolatedQuery, err := Interpolate(query, timeRange, rawSQL)
+	interpolatedQuery, err := Interpolate(query, timeRange, e.dsInfo.JsonData.TimeInterval, queryJson.RawSql)
 	if err != nil {
-		errAppendDebug("interpolation failed", e.transformQueryError(err), interpolatedQuery)
+		errAppendDebug("interpolation failed", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 
 	// data source specific substitutions
-	interpolatedQuery, err = e.macroEngine.Interpolate(query, timeRange, interpolatedQuery)
+	interpolatedQuery, err = e.macroEngine.Interpolate(&query, timeRange, interpolatedQuery)
 	if err != nil {
-		errAppendDebug("interpolation failed", e.transformQueryError(err), interpolatedQuery)
+		errAppendDebug("interpolation failed", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 
@@ -234,14 +289,14 @@ func (e *dataPlugin) executeQuery(query plugins.DataSubQuery, wg *sync.WaitGroup
 	defer session.Close()
 	db := session.DB()
 
-	rows, err := db.Query(interpolatedQuery)
+	rows, err := db.QueryContext(queryContext, interpolatedQuery)
 	if err != nil {
-		errAppendDebug("db query error", e.transformQueryError(err), interpolatedQuery)
+		errAppendDebug("db query error", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			e.log.Warn("Failed to close rows", "err", err)
+			logger.Warn("Failed to close rows", "err", err)
 		}
 	}()
 
@@ -253,28 +308,32 @@ func (e *dataPlugin) executeQuery(query plugins.DataSubQuery, wg *sync.WaitGroup
 
 	// Convert row.Rows to dataframe
 	stringConverters := e.queryResultTransformer.GetConverterList()
-	frame, err := sqlutil.FrameFromRows(rows.Rows, rowLimit, sqlutil.ToConverters(stringConverters...)...)
+	frame, err := sqlutil.FrameFromRows(rows.Rows, e.rowLimit, sqlutil.ToConverters(stringConverters...)...)
 	if err != nil {
 		errAppendDebug("convert frame from rows error", err, interpolatedQuery)
 		return
 	}
 
-	frame.SetMeta(&data.FrameMeta{
-		ExecutedQueryString: interpolatedQuery,
-	})
+	if frame.Meta == nil {
+		frame.Meta = &data.FrameMeta{}
+	}
 
-	// If no rows were returned, no point checking anything else.
+	frame.Meta.ExecutedQueryString = interpolatedQuery
+
+	// If no rows were returned, clear any previously set `Fields` with a single empty `data.Field` slice.
+	// Then assign `queryResult.dataResponse.Frames` the current single frame with that single empty Field.
+	// This assures 1) our visualization doesn't display unwanted empty fields, and also that 2)
+	// additionally-needed frame data stays intact and is correctly passed to our visulization.
 	if frame.Rows() == 0 {
-		queryResult.Dataframes = plugins.NewDecodedDataFrames(data.Frames{frame})
+		frame.Fields = []*data.Field{}
+		queryResult.dataResponse.Frames = data.Frames{frame}
 		ch <- queryResult
 		return
 	}
 
-	if qm.timeIndex != -1 {
-		if err := convertSQLTimeColumnToEpochMS(frame, qm.timeIndex); err != nil {
-			errAppendDebug("db convert time column failed", err, interpolatedQuery)
-			return
-		}
+	if err := convertSQLTimeColumnsToEpochMS(frame, qm); err != nil {
+		errAppendDebug("converting time columns failed", err, interpolatedQuery)
+		return
 	}
 
 	if qm.Format == dataQueryFormatSeries {
@@ -332,34 +391,33 @@ func (e *dataPlugin) executeQuery(query plugins.DataSubQuery, wg *sync.WaitGroup
 			var err error
 			frame, err = resample(frame, *qm)
 			if err != nil {
-				e.log.Error("Failed to resample dataframe", "err", err)
+				logger.Error("Failed to resample dataframe", "err", err)
 				frame.AppendNotices(data.Notice{Text: "Failed to resample dataframe", Severity: data.NoticeSeverityWarning})
 			}
 		}
 	}
 
-	queryResult.Dataframes = plugins.NewDecodedDataFrames(data.Frames{frame})
+	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
 }
 
 // Interpolate provides global macros/substitutions for all sql datasources.
-var Interpolate = func(query plugins.DataSubQuery, timeRange plugins.DataTimeRange, sql string) (string, error) {
-	minInterval, err := interval.GetIntervalFrom(query.DataSource, query.Model, time.Second*60)
+var Interpolate = func(query backend.DataQuery, timeRange backend.TimeRange, timeInterval string, sql string) (string, error) {
+	minInterval, err := intervalv2.GetIntervalFrom(timeInterval, query.Interval.String(), query.Interval.Milliseconds(), time.Second*60)
 	if err != nil {
 		return "", err
 	}
-	interval := sqlIntervalCalculator.Calculate(timeRange, minInterval)
+	interval := sqlIntervalCalculator.Calculate(timeRange, minInterval, query.MaxDataPoints)
 
 	sql = strings.ReplaceAll(sql, "$__interval_ms", strconv.FormatInt(interval.Milliseconds(), 10))
 	sql = strings.ReplaceAll(sql, "$__interval", interval.Text)
-	sql = strings.ReplaceAll(sql, "$__unixEpochFrom()", fmt.Sprintf("%d", timeRange.GetFromAsSecondsEpoch()))
-	sql = strings.ReplaceAll(sql, "$__unixEpochTo()", fmt.Sprintf("%d", timeRange.GetToAsSecondsEpoch()))
+	sql = strings.ReplaceAll(sql, "$__unixEpochFrom()", fmt.Sprintf("%d", timeRange.From.UTC().Unix()))
+	sql = strings.ReplaceAll(sql, "$__unixEpochTo()", fmt.Sprintf("%d", timeRange.To.UTC().Unix()))
 
 	return sql, nil
 }
 
-//nolint: staticcheck // plugins.DataPlugin deprecated
-func (e *dataPlugin) newProcessCfg(query plugins.DataSubQuery, queryContext plugins.DataQuery,
+func (e *DataSourceHandler) newProcessCfg(query backend.DataQuery, queryContext context.Context,
 	rows *core.Rows, interpolatedQuery string) (*dataQueryModel, error) {
 	columnNames, err := rows.Columns()
 	if err != nil {
@@ -375,40 +433,43 @@ func (e *dataPlugin) newProcessCfg(query plugins.DataSubQuery, queryContext plug
 		columnNames:  columnNames,
 		rows:         rows,
 		timeIndex:    -1,
+		timeEndIndex: -1,
 		metricIndex:  -1,
 		metricPrefix: false,
 		queryContext: queryContext,
 	}
 
-	if query.Model.Get("fill").MustBool(false) {
+	queryJson := QueryJson{}
+	err = json.Unmarshal(query.JSON, &queryJson)
+	if err != nil {
+		return nil, err
+	}
+
+	if queryJson.Fill {
 		qm.FillMissing = &data.FillMissing{}
-		qm.Interval = time.Duration(query.Model.Get("fillInterval").MustFloat64() * float64(time.Second))
-		switch strings.ToLower(query.Model.Get("fillMode").MustString()) {
+		qm.Interval = time.Duration(queryJson.FillInterval * float64(time.Second))
+		switch strings.ToLower(queryJson.FillMode) {
 		case "null":
 			qm.FillMissing.Mode = data.FillModeNull
 		case "previous":
 			qm.FillMissing.Mode = data.FillModePrevious
 		case "value":
 			qm.FillMissing.Mode = data.FillModeValue
-			qm.FillMissing.Value = query.Model.Get("fillValue").MustFloat64()
+			qm.FillMissing.Value = queryJson.FillValue
 		default:
 		}
 	}
-	//nolint: staticcheck // plugins.DataPlugin deprecated
 
-	if queryContext.TimeRange != nil {
-		qm.TimeRange.From = queryContext.TimeRange.GetFromAsTimeUTC()
-		qm.TimeRange.To = queryContext.TimeRange.GetToAsTimeUTC()
-	}
+	qm.TimeRange.From = query.TimeRange.From.UTC()
+	qm.TimeRange.To = query.TimeRange.To.UTC()
 
-	format := query.Model.Get("format").MustString("time_series")
-	switch format {
+	switch queryJson.Format {
 	case "time_series":
 		qm.Format = dataQueryFormatSeries
 	case "table":
 		qm.Format = dataQueryFormatTable
 	default:
-		panic(fmt.Sprintf("Unrecognized query model format: %q", format))
+		panic(fmt.Sprintf("Unrecognized query model format: %q", queryJson.Format))
 	}
 
 	for i, col := range qm.columnNames {
@@ -418,6 +479,12 @@ func (e *dataPlugin) newProcessCfg(query plugins.DataSubQuery, queryContext plug
 				break
 			}
 		}
+
+		if qm.Format == dataQueryFormatTable && col == "timeend" {
+			qm.timeEndIndex = i
+			continue
+		}
+
 		switch col {
 		case "metric":
 			qm.metricIndex = i
@@ -456,10 +523,11 @@ type dataQueryModel struct {
 	columnNames       []string
 	columnTypes       []*sql.ColumnType
 	timeIndex         int
+	timeEndIndex      int
 	metricIndex       int
 	rows              *core.Rows
 	metricPrefix      bool
-	queryContext      plugins.DataQuery
+	queryContext      context.Context
 }
 
 func convertInt64ToFloat64(origin *data.Field, newField *data.Field) {
@@ -785,6 +853,22 @@ func convertNullableFloat32ToEpochMS(origin *data.Field, newField *data.Field) {
 	}
 }
 
+func convertSQLTimeColumnsToEpochMS(frame *data.Frame, qm *dataQueryModel) error {
+	if qm.timeIndex != -1 {
+		if err := convertSQLTimeColumnToEpochMS(frame, qm.timeIndex); err != nil {
+			return fmt.Errorf("%v: %w", "failed to convert time column", err)
+		}
+	}
+
+	if qm.timeEndIndex != -1 {
+		if err := convertSQLTimeColumnToEpochMS(frame, qm.timeEndIndex); err != nil {
+			return fmt.Errorf("%v: %w", "failed to convert timeend column", err)
+		}
+	}
+
+	return nil
+}
+
 // convertSQLTimeColumnToEpochMS converts column named time to unix timestamp in milliseconds
 // to make native datetime types and epoch dates work in annotation and table queries.
 func convertSQLTimeColumnToEpochMS(frame *data.Frame, timeIndex int) error {
@@ -836,7 +920,8 @@ func convertSQLTimeColumnToEpochMS(frame *data.Frame, timeIndex int) error {
 }
 
 // convertSQLValueColumnToFloat converts timeseries value column to float.
-//nolint: gocyclo
+//
+//nolint:gocyclo
 func convertSQLValueColumnToFloat(frame *data.Frame, Index int) (*data.Frame, error) {
 	if Index < 0 || Index >= len(frame.Fields) {
 		return frame, fmt.Errorf("metricIndex %d is out of range", Index)
@@ -899,23 +984,36 @@ func convertSQLValueColumnToFloat(frame *data.Frame, Index int) (*data.Frame, er
 	return frame, nil
 }
 
-func SetupFillmode(query plugins.DataSubQuery, interval time.Duration, fillmode string) error {
-	query.Model.Set("fill", true)
-	query.Model.Set("fillInterval", interval.Seconds())
+func SetupFillmode(query *backend.DataQuery, interval time.Duration, fillmode string) error {
+	rawQueryProp := make(map[string]any)
+	queryBytes, err := query.JSON.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(queryBytes, &rawQueryProp)
+	if err != nil {
+		return err
+	}
+	rawQueryProp["fill"] = true
+	rawQueryProp["fillInterval"] = interval.Seconds()
+
 	switch fillmode {
 	case "NULL":
-		query.Model.Set("fillMode", "null")
+		rawQueryProp["fillMode"] = "null"
 	case "previous":
-		query.Model.Set("fillMode", "previous")
+		rawQueryProp["fillMode"] = "previous"
 	default:
-		query.Model.Set("fillMode", "value")
+		rawQueryProp["fillMode"] = "value"
 		floatVal, err := strconv.ParseFloat(fillmode, 64)
 		if err != nil {
 			return fmt.Errorf("error parsing fill value %v", fillmode)
 		}
-		query.Model.Set("fillValue", floatVal)
+		rawQueryProp["fillValue"] = floatVal
 	}
-
+	query.JSON, err = json.Marshal(rawQueryProp)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -929,7 +1027,7 @@ func (m *SQLMacroEngineBase) ReplaceAllStringSubmatchFunc(re *regexp.Regexp, str
 	result := ""
 	lastIndex := 0
 
-	for _, v := range re.FindAllSubmatchIndex([]byte(str), -1) {
+	for _, v := range re.FindAllStringSubmatchIndex(str, -1) {
 		groups := []string{}
 		for i := 0; i < len(v); i += 2 {
 			groups = append(groups, str[v[i]:v[i+1]])

@@ -1,4 +1,3 @@
-import { PanelModel } from 'app/features/dashboard/state/PanelModel';
 import {
   DataLink,
   DisplayValue,
@@ -12,6 +11,8 @@ import {
   ScopedVar,
   ScopedVars,
 } from '@grafana/data';
+import { PanelModel } from 'app/features/dashboard/state/PanelModel';
+
 import { getLinkSrv } from './link_srv';
 
 interface SeriesVars {
@@ -84,10 +85,10 @@ export const getFieldLinksSupplier = (value: FieldDisplay): LinkModelSupplier<Fi
             const { timeField } = getTimeField(dataFrame);
             scopedVars['__value'] = {
               value: {
-                raw: field.values.get(value.rowIndex),
+                raw: field.values[value.rowIndex],
                 numeric: value.display.numeric,
                 text: formattedValueToString(value.display),
-                time: timeField ? timeField.values.get(value.rowIndex) : undefined,
+                time: timeField ? timeField.values[value.rowIndex] : undefined,
               },
               text: 'Value',
             };
@@ -125,7 +126,7 @@ export const getFieldLinksSupplier = (value: FieldDisplay): LinkModelSupplier<Fi
 
       const replace: InterpolateFunction = (value: string, vars: ScopedVars | undefined, fmt?: string | Function) => {
         const finalVars: ScopedVars = {
-          ...(scopedVars as ScopedVars),
+          ...scopedVars,
           ...vars,
         };
         return replaceVariables(value, finalVars, fmt);

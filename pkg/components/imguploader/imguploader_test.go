@@ -12,7 +12,7 @@ func TestImageUploaderFactory(t *testing.T) {
 	t.Run("Can create image uploader for ", func(t *testing.T) {
 		t.Run("S3ImageUploader config", func(t *testing.T) {
 			cfg := setting.NewCfg()
-			err := cfg.Load(&setting.CommandLineArgs{
+			err := cfg.Load(setting.CommandLineArgs{
 				HomePath: "../../../",
 			})
 			require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestImageUploaderFactory(t *testing.T) {
 
 		t.Run("Webdav uploader", func(t *testing.T) {
 			cfg := setting.NewCfg()
-			err := cfg.Load(&setting.CommandLineArgs{
+			err := cfg.Load(setting.CommandLineArgs{
 				HomePath: "../../../",
 			})
 			require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestImageUploaderFactory(t *testing.T) {
 
 		t.Run("GCS uploader", func(t *testing.T) {
 			cfg := setting.NewCfg()
-			err := cfg.Load(&setting.CommandLineArgs{
+			err := cfg.Load(setting.CommandLineArgs{
 				HomePath: "../../../",
 			})
 			require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestImageUploaderFactory(t *testing.T) {
 
 		t.Run("AzureBlobUploader config", func(t *testing.T) {
 			cfg := setting.NewCfg()
-			err := cfg.Load(&setting.CommandLineArgs{
+			err := cfg.Load(setting.CommandLineArgs{
 				HomePath: "../../../",
 			})
 			require.NoError(t, err)
@@ -154,6 +154,8 @@ func TestImageUploaderFactory(t *testing.T) {
 				require.NoError(t, err)
 				_, err = azureBlobSec.NewKey("container_name", "container_name")
 				require.NoError(t, err)
+				_, err = azureBlobSec.NewKey("sas_token_expiration_days", "sas_token_expiration_days")
+				require.NoError(t, err)
 
 				uploader, err := NewImageUploader()
 				require.NoError(t, err)
@@ -163,12 +165,13 @@ func TestImageUploaderFactory(t *testing.T) {
 				require.Equal(t, "account_name", original.account_name)
 				require.Equal(t, "account_key", original.account_key)
 				require.Equal(t, "container_name", original.container_name)
+				require.Equal(t, -1, original.sas_token_expiration_days)
 			})
 		})
 
 		t.Run("Local uploader", func(t *testing.T) {
 			cfg := setting.NewCfg()
-			err := cfg.Load(&setting.CommandLineArgs{
+			err := cfg.Load(setting.CommandLineArgs{
 				HomePath: "../../../",
 			})
 			require.NoError(t, err)

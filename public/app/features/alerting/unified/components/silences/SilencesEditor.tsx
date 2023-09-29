@@ -1,57 +1,61 @@
-import { Silence, SilenceCreatePayload } from 'app/plugins/datasource/alertmanager/types';
-import React, { FC, useMemo, useState } from 'react';
-import { Button, Field, FieldSet, Input, LinkButton, TextArea, useStyles } from '@grafana/ui';
+import { css, cx } from '@emotion/css';
+import { isEqual, pickBy } from 'lodash';
+import React, { useMemo, useState } from 'react';
+import { FormProvider, useForm } from 'react-hook-form';
+import { useDebounce } from 'react-use';
+
 import {
-  DefaultTimeZone,
-  GrafanaTheme,
-  parseDuration,
-  intervalToAbbreviatedDurationString,
   addDurationToDate,
   dateTime,
+  DefaultTimeZone,
+  GrafanaTheme2,
+  intervalToAbbreviatedDurationString,
   isValidDate,
-  UrlQueryMap,
+  parseDuration,
 } from '@grafana/data';
-import { useDebounce } from 'react-use';
 import { config } from '@grafana/runtime';
-import { pickBy } from 'lodash';
-import MatchersField from './MatchersField';
-import { useForm, FormProvider } from 'react-hook-form';
-import { SilenceFormFields } from '../../types/silence-form';
-import { useDispatch } from 'react-redux';
-import { createOrUpdateSilenceAction } from '../../state/actions';
-import { SilencePeriod } from './SilencePeriod';
-import { css, cx } from '@emotion/css';
-import { useUnifiedAlertingSelector } from '../../hooks/useUnifiedAlertingSelector';
-import { makeAMLink } from '../../utils/misc';
+import { Button, Field, FieldSet, Input, LinkButton, TextArea, useStyles2 } from '@grafana/ui';
 import { useCleanup } from 'app/core/hooks/useCleanup';
-import { useQueryParams } from 'app/core/hooks/useQueryParams';
+import { Matcher, MatcherOperator, Silence, SilenceCreatePayload } from 'app/plugins/datasource/alertmanager/types';
+import { useDispatch } from 'app/types';
+
+import { useURLSearchParams } from '../../hooks/useURLSearchParams';
+import { useUnifiedAlertingSelector } from '../../hooks/useUnifiedAlertingSelector';
+import { createOrUpdateSilenceAction } from '../../state/actions';
+import { SilenceFormFields } from '../../types/silence-form';
+import { matcherFieldToMatcher, matcherToMatcherField } from '../../utils/alertmanager';
 import { parseQueryParamMatchers } from '../../utils/matchers';
+import { makeAMLink } from '../../utils/misc';
+import { initialAsyncRequestState } from '../../utils/redux';
+
+import MatchersField from './MatchersField';
+import { SilencePeriod } from './SilencePeriod';
+import { SilencedInstancesPreview } from './SilencedInstancesPreview';
 
 interface Props {
   silence?: Silence;
   alertManagerSourceName: string;
 }
 
-const defaultsFromQuery = (queryParams: UrlQueryMap): Partial<SilenceFormFields> => {
+const defaultsFromQuery = (searchParams: URLSearchParams): Partial<SilenceFormFields> => {
   const defaults: Partial<SilenceFormFields> = {};
 
-  const { matchers, comment } = queryParams;
+  const comment = searchParams.get('comment');
+  const matchers = searchParams.getAll('matcher');
 
-  if (typeof matchers === 'string') {
-    const formMatchers = parseQueryParamMatchers(matchers);
-    if (formMatchers.length) {
-      defaults.matchers = formMatchers;
-    }
+  const formMatchers = parseQueryParamMatchers(matchers);
+  if (formMatchers.length) {
+    defaults.matchers = formMatchers.map(matcherToMatcherField);
   }
 
-  if (typeof comment === 'string') {
+  if (comment) {
     defaults.comment = comment;
   }
 
   return defaults;
 };
 
-const getDefaultFormValues = (queryParams: UrlQueryMap, silence?: Silence): SilenceFormFields => {
+const getDefaultFormValues = (searchParams: URLSearchParams, silence?: Silence): SilenceFormFields => {
   const now = new Date();
   if (silence) {
     const isExpired = Date.parse(silence.endsAt) < Date.now();
@@ -69,7 +73,7 @@ const getDefaultFormValues = (queryParams: UrlQueryMap, silence?: Silence): Sile
       createdBy: silence.createdBy,
       duration: intervalToAbbreviatedDurationString(interval),
       isRegex: false,
-      matchers: silence.matchers || [],
+      matchers: silence.matchers?.map(matcherToMatcherField) || [],
       matcherName: '',
       matcherValue: '',
       timeZone: DefaultTimeZone,
@@ -80,34 +84,39 @@ const getDefaultFormValues = (queryParams: UrlQueryMap, silence?: Silence): Sile
       id: '',
       startsAt: now.toISOString(),
       endsAt: endsAt.toISOString(),
-      comment: '',
+      comment: `created ${dateTime().format('YYYY-MM-DD HH:mm')}`,
       createdBy: config.bootData.user.name,
       duration: '2h',
       isRegex: false,
-      matchers: [{ name: '', value: '', isRegex: false, isEqual: true }],
+      matchers: [{ name: '', value: '', operator: MatcherOperator.equal }],
       matcherName: '',
       matcherValue: '',
       timeZone: DefaultTimeZone,
-      ...defaultsFromQuery(queryParams),
+      ...defaultsFromQuery(searchParams),
     };
   }
 };
 
-export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) => {
-  const [queryParams] = useQueryParams();
-  const defaultValues = useMemo(() => getDefaultFormValues(queryParams, silence), [silence, queryParams]);
+export const SilencesEditor = ({ silence, alertManagerSourceName }: Props) => {
+  const [urlSearchParams] = useURLSearchParams();
+
+  const defaultValues = useMemo(() => getDefaultFormValues(urlSearchParams, silence), [silence, urlSearchParams]);
   const formAPI = useForm({ defaultValues });
   const dispatch = useDispatch();
-  const styles = useStyles(getStyles);
+  const styles = useStyles2(getStyles);
+  const [matchersForPreview, setMatchersForPreview] = useState<Matcher[]>(
+    defaultValues.matchers.map(matcherFieldToMatcher)
+  );
 
   const { loading } = useUnifiedAlertingSelector((state) => state.updateSilence);
 
-  useCleanup((state) => state.unifiedAlerting.updateSilence);
+  useCleanup((state) => (state.unifiedAlerting.updateSilence = initialAsyncRequestState));
 
   const { register, handleSubmit, formState, watch, setValue, clearErrors } = formAPI;
 
   const onSubmit = (data: SilenceFormFields) => {
-    const { id, startsAt, endsAt, comment, createdBy, matchers } = data;
+    const { id, startsAt, endsAt, comment, createdBy, matchers: matchersFields } = data;
+    const matchers = matchersFields.map(matcherFieldToMatcher);
     const payload = pickBy(
       {
         id,
@@ -132,6 +141,7 @@ export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) =
   const duration = watch('duration');
   const startsAt = watch('startsAt');
   const endsAt = watch('endsAt');
+  const matcherFields = watch('matchers');
 
   // Keep duration and endsAt in sync
   const [prevDuration, setPrevDuration] = useState(duration);
@@ -159,11 +169,25 @@ export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) =
     [clearErrors, duration, endsAt, prevDuration, setValue, startsAt]
   );
 
+  useDebounce(
+    () => {
+      // React-hook-form watch does not return referentialy equal values so this trick is needed
+      const newMatchers = matcherFields.filter((m) => m.name && m.value).map(matcherFieldToMatcher);
+      if (!isEqual(matchersForPreview, newMatchers)) {
+        setMatchersForPreview(newMatchers);
+      }
+    },
+    700,
+    [matcherFields]
+  );
+
+  const userLogged = Boolean(config.bootData.user.isSignedIn && config.bootData.user.name);
+
   return (
     <FormProvider {...formAPI}>
       <form onSubmit={handleSubmit(onSubmit)}>
         <FieldSet label={`${silence ? 'Recreate silence' : 'Create silence'}`}>
-          <div className={styles.flexRow}>
+          <div className={cx(styles.flexRow, styles.silencePeriod)}>
             <SilencePeriod />
             <Field
               label="Duration"
@@ -194,17 +218,27 @@ export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) =
             error={formState.errors.comment?.message}
             invalid={!!formState.errors.comment}
           >
-            <TextArea {...register('comment', { required: { value: true, message: 'Required.' } })} />
+            <TextArea
+              {...register('comment', { required: { value: true, message: 'Required.' } })}
+              rows={5}
+              placeholder="Details about the silence"
+            />
           </Field>
-          <Field
-            className={cx(styles.field, styles.createdBy)}
-            label="Created by"
-            required
-            error={formState.errors.createdBy?.message}
-            invalid={!!formState.errors.createdBy}
-          >
-            <Input {...register('createdBy', { required: { value: true, message: 'Required.' } })} />
-          </Field>
+          {!userLogged && (
+            <Field
+              className={cx(styles.field, styles.createdBy)}
+              label="Created By"
+              required
+              error={formState.errors.createdBy?.message}
+              invalid={!!formState.errors.createdBy}
+            >
+              <Input
+                {...register('createdBy', { required: { value: true, message: 'Required.' } })}
+                placeholder="Who's creating the silence"
+              />
+            </Field>
+          )}
+          <SilencedInstancesPreview amSourceName={alertManagerSourceName} matchers={matchersForPreview} />
         </FieldSet>
         <div className={styles.flexRow}>
           {loading && (
@@ -212,12 +246,8 @@ export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) =
               Saving...
             </Button>
           )}
-          {!loading && <Button type="submit">Submit</Button>}
-          <LinkButton
-            href={makeAMLink('alerting/silences', alertManagerSourceName)}
-            variant={'secondary'}
-            fill="outline"
-          >
+          {!loading && <Button type="submit">Save silence</Button>}
+          <LinkButton href={makeAMLink('alerting/silences', alertManagerSourceName)} variant={'secondary'}>
             Cancel
           </LinkButton>
         </div>
@@ -226,12 +256,12 @@ export const SilencesEditor: FC<Props> = ({ silence, alertManagerSourceName }) =
   );
 };
 
-const getStyles = (theme: GrafanaTheme) => ({
+const getStyles = (theme: GrafanaTheme2) => ({
   field: css`
-    margin: ${theme.spacing.sm} 0;
+    margin: ${theme.spacing(1, 0)};
   `,
   textArea: css`
-    width: 600px;
+    max-width: ${theme.breakpoints.values.sm}px;
   `,
   createdBy: css`
     width: 200px;
@@ -242,8 +272,11 @@ const getStyles = (theme: GrafanaTheme) => ({
     justify-content: flex-start;
 
     & > * {
-      margin-right: ${theme.spacing.sm};
+      margin-right: ${theme.spacing(1)};
     }
+  `,
+  silencePeriod: css`
+    max-width: ${theme.breakpoints.values.sm}px;
   `,
 });
 

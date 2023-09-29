@@ -1,24 +1,43 @@
 import { PanelPlugin } from '@grafana/data';
-import { DrawStyle, GraphFieldConfig, commonOptionsBuilder } from '@grafana/ui';
-import { XYChartPanel } from './XYChartPanel';
-import { Options } from './types';
-import { XYDimsEditor } from './XYDimsEditor';
-import { getGraphFieldConfig, defaultGraphConfig } from '../timeseries/config';
+import { commonOptionsBuilder } from '@grafana/ui';
 
-export const plugin = new PanelPlugin<Options, GraphFieldConfig>(XYChartPanel)
-  .useFieldConfig(
-    getGraphFieldConfig({
-      ...defaultGraphConfig,
-      drawStyle: DrawStyle.Points,
-    })
-  )
+import { AutoEditor } from './AutoEditor';
+import { ManualEditor } from './ManualEditor';
+import { XYChartPanel2 } from './XYChartPanel2';
+import { getScatterFieldConfig } from './config';
+import { Options, FieldConfig, defaultFieldConfig } from './panelcfg.gen';
+
+export const plugin = new PanelPlugin<Options, FieldConfig>(XYChartPanel2)
+  .useFieldConfig(getScatterFieldConfig(defaultFieldConfig))
   .setPanelOptions((builder) => {
-    builder.addCustomEditor({
-      id: 'xyPlotConfig',
-      path: 'dims',
-      name: 'Data',
-      editor: XYDimsEditor,
-    });
+    builder
+      .addRadio({
+        path: 'seriesMapping',
+        name: 'Series mapping',
+        defaultValue: 'auto',
+        settings: {
+          options: [
+            { value: 'auto', label: 'Auto', description: 'No changes to saved model since 8.0' },
+            { value: 'manual', label: 'Manual' },
+          ],
+        },
+      })
+      .addCustomEditor({
+        id: 'xyPlotConfig',
+        path: 'dims',
+        name: '',
+        editor: AutoEditor,
+        showIf: (cfg) => cfg.seriesMapping === 'auto',
+      })
+      .addCustomEditor({
+        id: 'series',
+        path: 'series',
+        name: '',
+        defaultValue: [],
+        editor: ManualEditor,
+        showIf: (cfg) => cfg.seriesMapping === 'manual',
+      });
+
     commonOptionsBuilder.addTooltipOptions(builder);
     commonOptionsBuilder.addLegendOptions(builder);
   });

@@ -1,13 +1,16 @@
+import React from 'react';
+
 import { SelectableValue } from '@grafana/data';
 import { InlineSegmentGroup, Segment, SegmentAsync } from '@grafana/ui';
-import React from 'react';
+
 import { useFields } from '../../../hooks/useFields';
 import { useDispatch } from '../../../hooks/useStatelessReducer';
 import { segmentStyles } from '../styles';
-import { BucketAggregation, BucketAggregationType, isBucketAggregationWithField } from './aggregations';
+
+import { BucketAggregation, BucketAggregationType } from './../../../types';
 import { SettingsEditor } from './SettingsEditor';
+import { isBucketAggregationWithField } from './aggregations';
 import { changeBucketAggregationField, changeBucketAggregationType } from './state/actions';
-import { BucketAggregationAction } from './state/types';
 import { bucketAggregationConfig } from './utils';
 
 const bucketAggOptions: Array<SelectableValue<BucketAggregationType>> = Object.entries(bucketAggregationConfig).map(
@@ -27,7 +30,7 @@ interface QueryMetricEditorProps {
 }
 
 export const BucketAggregationEditor = ({ value }: QueryMetricEditorProps) => {
-  const dispatch = useDispatch<BucketAggregationAction>();
+  const dispatch = useDispatch();
   const getFields = useFields(value.type);
 
   return (
@@ -36,7 +39,7 @@ export const BucketAggregationEditor = ({ value }: QueryMetricEditorProps) => {
         <Segment
           className={segmentStyles}
           options={bucketAggOptions}
-          onChange={(e) => dispatch(changeBucketAggregationType(value.id, e.value!))}
+          onChange={(e) => dispatch(changeBucketAggregationType({ id: value.id, newType: e.value! }))}
           value={toOption(value)}
         />
 
@@ -44,7 +47,7 @@ export const BucketAggregationEditor = ({ value }: QueryMetricEditorProps) => {
           <SegmentAsync
             className={segmentStyles}
             loadOptions={getFields}
-            onChange={(e) => dispatch(changeBucketAggregationField(value.id, e.value))}
+            onChange={(e) => dispatch(changeBucketAggregationField({ id: value.id, newField: e.value }))}
             placeholder="Select Field"
             value={value.field}
           />

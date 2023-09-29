@@ -1,15 +1,15 @@
+import { Meta, StoryFn } from '@storybook/react';
 import React, { useState } from 'react';
-import { Story } from '@storybook/react';
-import { FilterPill, FilterPillProps } from './FilterPill';
-import { withCenteredStory } from '@grafana/ui/src/utils/storybook/withCenteredStory';
-import mdx from './FilterPill.mdx';
+
 import { getAvailableIcons } from '../../types';
 import { HorizontalGroup } from '../Layout/Layout';
 
-export default {
+import { FilterPill } from './FilterPill';
+import mdx from './FilterPill.mdx';
+
+const meta: Meta<typeof FilterPill> = {
   title: 'General/FilterPill',
   component: FilterPill,
-  decorators: [withCenteredStory],
   argTypes: {
     icon: { control: { type: 'select', options: getAvailableIcons() } },
     onClick: { action: 'Pill Clicked' },
@@ -21,7 +21,7 @@ export default {
   },
 };
 
-export const Basic: Story<FilterPillProps> = (args) => {
+export const Basic: StoryFn<typeof FilterPill> = (args) => {
   return <FilterPill {...args} />;
 };
 
@@ -43,3 +43,5 @@ Basic.args = {
   label: 'Test',
   icon: undefined,
 };
+
+export default meta;

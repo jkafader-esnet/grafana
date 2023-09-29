@@ -1,23 +1,22 @@
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { SearchItem, Props } from './SearchItem';
-import { DashboardSearchItemType } from '../types';
+
+import { selectors } from '@grafana/e2e-selectors';
+
+import { DashboardViewItem } from '../types';
+
+import { Props, SearchItem } from './SearchItem';
 
 beforeEach(() => {
   jest.clearAllMocks();
 });
 
-const data = {
-  id: 1,
+const data: DashboardViewItem = {
+  kind: 'dashboard' as const,
   uid: 'lBdLINUWk',
   title: 'Test 1',
-  uri: 'db/test1',
   url: '/d/lBdLINUWk/test1',
-  slug: '',
-  type: DashboardSearchItemType.DashDB,
   tags: ['Tag1', 'Tag2'],
-  isStarred: false,
-  checked: false,
 };
 
 const setup = (propOverrides?: Partial<Props>) => {
@@ -35,7 +34,7 @@ const setup = (propOverrides?: Partial<Props>) => {
 describe('SearchItem', () => {
   it('should render the item', () => {
     setup();
-    expect(screen.getAllByLabelText('Dashboard search item Test 1')).toHaveLength(1);
+    expect(screen.getAllByTestId(selectors.components.Search.dashboardItem('Test 1'))).toHaveLength(1);
     expect(screen.getAllByText('Test 1')).toHaveLength(1);
   });
 
@@ -50,7 +49,7 @@ describe('SearchItem', () => {
   });
 
   it('should mark items as checked', () => {
-    setup({ editable: true, item: { ...data, checked: true } });
+    setup({ editable: true, isSelected: true });
     expect(screen.getByRole('checkbox')).toBeChecked();
   });
 

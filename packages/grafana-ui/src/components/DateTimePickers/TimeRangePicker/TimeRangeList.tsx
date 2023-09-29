@@ -1,27 +1,31 @@
-import React, { ReactNode } from 'react';
 import { css } from '@emotion/css';
+import React, { ReactNode } from 'react';
+
 import { TimeOption } from '@grafana/data';
+
+import { stylesFactory } from '../../../themes';
+import { t } from '../../../utils/i18n';
+
 import { TimePickerTitle } from './TimePickerTitle';
 import { TimeRangeOption } from './TimeRangeOption';
-import { stylesFactory } from '../../../themes';
 
 const getStyles = stylesFactory(() => {
   return {
-    title: css`
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 16px 5px 9px;
-    `,
+    title: css({
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '8px 16px 5px 9px',
+    }),
   };
 });
 
 const getOptionsStyles = stylesFactory(() => {
   return {
-    grow: css`
-      flex-grow: 1;
-      align-items: flex-start;
-    `,
+    grow: css({
+      flexGrow: 1,
+      alignItems: 'flex-start',
+    }),
   };
 });
 
@@ -33,7 +37,7 @@ interface Props {
   placeholderEmpty?: ReactNode;
 }
 
-export const TimeRangeList: React.FC<Props> = (props) => {
+export const TimeRangeList = (props: Props) => {
   const styles = getStyles();
   const { title, options, placeholderEmpty } = props;
 
@@ -46,30 +50,33 @@ export const TimeRangeList: React.FC<Props> = (props) => {
   }
 
   return (
-    <>
-      <div className={styles.title}>
-        <TimePickerTitle>{title}</TimePickerTitle>
-      </div>
-      <Options {...props} />
-    </>
+    <section aria-label={title}>
+      <fieldset>
+        <div className={styles.title}>
+          <TimePickerTitle>{title}</TimePickerTitle>
+        </div>
+        <Options {...props} />
+      </fieldset>
+    </section>
   );
 };
 
-const Options: React.FC<Props> = ({ options, value, onChange }) => {
+const Options = ({ options, value, onChange, title }: Props) => {
   const styles = getOptionsStyles();
 
   return (
     <>
-      <div>
+      <ul aria-roledescription={t('time-picker.time-range.aria-role', 'Time range selection')}>
         {options.map((option, index) => (
           <TimeRangeOption
             key={keyForOption(option, index)}
             value={option}
             selected={isEqual(option, value)}
             onSelect={onChange}
+            name={title ?? t('time-picker.time-range.default-title', 'Time ranges')}
           />
         ))}
-      </div>
+      </ul>
       <div className={styles.grow} />
     </>
   );

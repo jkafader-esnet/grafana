@@ -1,149 +1,195 @@
-// Libraries
-import React, { PureComponent, memo, FormEvent } from 'react';
-import { css } from '@emotion/css';
+import { css, cx } from '@emotion/css';
+import { useDialog } from '@react-aria/dialog';
+import { FocusScope } from '@react-aria/focus';
+import { useOverlay } from '@react-aria/overlays';
+import React, { memo, FormEvent, createRef, useState } from 'react';
 
-// Components
-import { Tooltip } from '../Tooltip/Tooltip';
-import { TimePickerContent } from './TimeRangePicker/TimePickerContent';
-import { ClickOutsideWrapper } from '../ClickOutsideWrapper/ClickOutsideWrapper';
-
-// Utils & Services
-import { stylesFactory } from '../../themes/stylesFactory';
-import { withTheme, useTheme } from '../../themes/ThemeContext';
-
-// Types
 import {
   isDateTime,
   rangeUtil,
-  GrafanaTheme,
+  GrafanaTheme2,
   dateTimeFormat,
   timeZoneFormatUserFriendly,
   TimeRange,
   TimeZone,
   dateMath,
 } from '@grafana/data';
-import { Themeable } from '../../types';
-import { otherOptions, quickOptions } from './rangeOptions';
-import { ButtonGroup, ToolbarButton } from '../Button';
+import { selectors } from '@grafana/e2e-selectors';
+
+import { useStyles2, useTheme2 } from '../../themes/ThemeContext';
+import { t, Trans } from '../../utils/i18n';
+import { ButtonGroup } from '../Button';
+import { getModalStyles } from '../Modal/getModalStyles';
+import { ToolbarButton } from '../ToolbarButton';
+import { Tooltip } from '../Tooltip/Tooltip';
+
+import { TimePickerContent } from './TimeRangePicker/TimePickerContent';
+import { quickOptions } from './options';
 
 /** @public */
-export interface TimeRangePickerProps extends Themeable {
+export interface TimeRangePickerProps {
   hideText?: boolean;
   value: TimeRange;
   timeZone?: TimeZone;
+  fiscalYearStartMonth?: number;
   timeSyncButton?: JSX.Element;
   isSynced?: boolean;
   onChange: (timeRange: TimeRange) => void;
   onChangeTimeZone: (timeZone: TimeZone) => void;
+  onChangeFiscalYearStartMonth?: (month: number) => void;
   onMoveBackward: () => void;
   onMoveForward: () => void;
   onZoom: () => void;
   history?: TimeRange[];
   hideQuickRanges?: boolean;
+  widthOverride?: number;
+  isOnCanvas?: boolean;
 }
 
 export interface State {
   isOpen: boolean;
 }
 
-export class UnthemedTimeRangePicker extends PureComponent<TimeRangePickerProps, State> {
-  state: State = {
-    isOpen: false,
+export function TimeRangePicker(props: TimeRangePickerProps) {
+  const [isOpen, setOpen] = useState(false);
+
+  const {
+    value,
+    onMoveBackward,
+    onMoveForward,
+    onZoom,
+    timeZone,
+    fiscalYearStartMonth,
+    timeSyncButton,
+    isSynced,
+    history,
+    onChangeTimeZone,
+    onChangeFiscalYearStartMonth,
+    hideQuickRanges,
+    widthOverride,
+    isOnCanvas,
+  } = props;
+
+  const onChange = (timeRange: TimeRange) => {
+    props.onChange(timeRange);
+    setOpen(false);
   };
 
-  onChange = (timeRange: TimeRange) => {
-    this.props.onChange(timeRange);
-    this.setState({ isOpen: false });
-  };
-
-  onOpen = (event: FormEvent<HTMLButtonElement>) => {
-    const { isOpen } = this.state;
+  const onOpen = (event: FormEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     event.preventDefault();
-    this.setState({ isOpen: !isOpen });
+    setOpen(!isOpen);
   };
 
-  onClose = () => {
-    this.setState({ isOpen: false });
+  const onClose = () => {
+    setOpen(false);
   };
 
-  render() {
-    const {
-      value,
-      onMoveBackward,
-      onMoveForward,
-      onZoom,
-      timeZone,
-      timeSyncButton,
-      isSynced,
-      theme,
-      history,
-      onChangeTimeZone,
-      hideQuickRanges,
-    } = this.props;
+  const ref = createRef<HTMLElement>();
+  const { overlayProps, underlayProps } = useOverlay({ onClose, isDismissable: true, isOpen }, ref);
+  const { dialogProps } = useDialog({}, ref);
 
-    const { isOpen } = this.state;
-    const styles = getStyles(theme);
-    const hasAbsolute = isDateTime(value.raw.from) || isDateTime(value.raw.to);
-    const variant = isSynced ? 'active' : 'default';
+  const theme = useTheme2();
+  const styles = useStyles2(getStyles);
+  const { modalBackdrop } = getModalStyles(theme);
+  const hasAbsolute = isDateTime(value.raw.from) || isDateTime(value.raw.to);
+  const variant = isSynced ? 'active' : isOnCanvas ? 'canvas' : 'default';
 
-    return (
-      <ButtonGroup className={styles.container}>
-        {hasAbsolute && <ToolbarButton variant={variant} onClick={onMoveBackward} icon="angle-left" narrow />}
+  const currentTimeRange = formattedRange(value, timeZone);
 
-        <Tooltip content={<TimePickerTooltip timeRange={value} timeZone={timeZone} />} placement="bottom">
-          <ToolbarButton
-            aria-label="TimePicker Open Button"
-            onClick={this.onOpen}
-            icon="clock-nine"
-            isOpen={isOpen}
-            variant={variant}
-          >
-            <TimePickerButtonLabel {...this.props} />
-          </ToolbarButton>
-        </Tooltip>
-        {isOpen && (
-          <ClickOutsideWrapper includeButtonPress={false} onClick={this.onClose}>
-            <TimePickerContent
-              timeZone={timeZone}
-              value={value}
-              onChange={this.onChange}
-              otherOptions={otherOptions}
-              quickOptions={quickOptions}
-              history={history}
-              showHistory
-              onChangeTimeZone={onChangeTimeZone}
-              hideQuickRanges={hideQuickRanges}
-            />
-          </ClickOutsideWrapper>
-        )}
+  return (
+    <ButtonGroup className={styles.container}>
+      {hasAbsolute && (
+        <ToolbarButton
+          aria-label={t('time-picker.range-picker.backwards-time-aria-label', 'Move time range backwards')}
+          variant={variant}
+          onClick={onMoveBackward}
+          icon="angle-left"
+          narrow
+        />
+      )}
 
-        {timeSyncButton}
+      <Tooltip content={<TimePickerTooltip timeRange={value} timeZone={timeZone} />} placement="bottom" interactive>
+        <ToolbarButton
+          data-testid={selectors.components.TimePicker.openButton}
+          aria-label={t('time-picker.range-picker.current-time-selected', 'Time range selected: {{currentTimeRange}}', {
+            currentTimeRange,
+          })}
+          aria-controls="TimePickerContent"
+          onClick={onOpen}
+          icon="clock-nine"
+          isOpen={isOpen}
+          variant={variant}
+        >
+          <TimePickerButtonLabel {...props} />
+        </ToolbarButton>
+      </Tooltip>
+      {isOpen && (
+        <div>
+          <div role="presentation" className={cx(modalBackdrop, styles.backdrop)} {...underlayProps} />
+          <FocusScope contain autoFocus>
+            <section className={styles.content} ref={ref} {...overlayProps} {...dialogProps}>
+              <TimePickerContent
+                timeZone={timeZone}
+                fiscalYearStartMonth={fiscalYearStartMonth}
+                value={value}
+                onChange={onChange}
+                quickOptions={quickOptions}
+                history={history}
+                showHistory
+                widthOverride={widthOverride}
+                onChangeTimeZone={onChangeTimeZone}
+                onChangeFiscalYearStartMonth={onChangeFiscalYearStartMonth}
+                hideQuickRanges={hideQuickRanges}
+              />
+            </section>
+          </FocusScope>
+        </div>
+      )}
 
-        {hasAbsolute && <ToolbarButton onClick={onMoveForward} icon="angle-right" narrow variant={variant} />}
+      {timeSyncButton}
 
-        <Tooltip content={ZoomOutTooltip} placement="bottom">
-          <ToolbarButton onClick={onZoom} icon="search-minus" variant={variant} />
-        </Tooltip>
-      </ButtonGroup>
-    );
-  }
+      {hasAbsolute && (
+        <ToolbarButton
+          aria-label={t('time-picker.range-picker.forwards-time-aria-label', 'Move time range forwards')}
+          onClick={onMoveForward}
+          icon="angle-right"
+          narrow
+          variant={variant}
+        />
+      )}
+
+      <Tooltip content={ZoomOutTooltip} placement="bottom">
+        <ToolbarButton
+          aria-label={t('time-picker.range-picker.zoom-out-button', 'Zoom out time range')}
+          onClick={onZoom}
+          icon="search-minus"
+          variant={variant}
+        />
+      </Tooltip>
+    </ButtonGroup>
+  );
 }
+
+TimeRangePicker.displayName = 'TimeRangePicker';
 
 const ZoomOutTooltip = () => (
   <>
-    Time range zoom out <br /> CTRL+Z
+    <Trans i18nKey="time-picker.range-picker.zoom-out-tooltip">
+      Time range zoom out <br /> CTRL+Z
+    </Trans>
   </>
 );
 
-const TimePickerTooltip = ({ timeRange, timeZone }: { timeRange: TimeRange; timeZone?: TimeZone }) => {
-  const theme = useTheme();
-  const styles = getLabelStyles(theme);
+export const TimePickerTooltip = ({ timeRange, timeZone }: { timeRange: TimeRange; timeZone?: TimeZone }) => {
+  const styles = useStyles2(getLabelStyles);
 
   return (
     <>
       {dateTimeFormat(timeRange.from, { timeZone })}
-      <div className="text-center">to</div>
+      <div className="text-center">
+        <Trans i18nKey="time-picker.range-picker.to">to</Trans>
+      </div>
       {dateTimeFormat(timeRange.to, { timeZone })}
       <div className="text-center">
         <span className={styles.utc}>{timeZoneFormatUserFriendly(timeZone)}</span>
@@ -155,8 +201,7 @@ const TimePickerTooltip = ({ timeRange, timeZone }: { timeRange: TimeRange; time
 type LabelProps = Pick<TimeRangePickerProps, 'hideText' | 'value' | 'timeZone'>;
 
 export const TimePickerButtonLabel = memo<LabelProps>(({ hideText, value, timeZone }) => {
-  const theme = useTheme();
-  const styles = getLabelStyles(theme);
+  const styles = useStyles2(getLabelStyles);
 
   if (hideText) {
     return null;
@@ -180,33 +225,50 @@ const formattedRange = (value: TimeRange, timeZone?: TimeZone) => {
   return rangeUtil.describeTimeRange(adjustedTimeRange, timeZone);
 };
 
-/** @public */
-export const TimeRangePicker = withTheme(UnthemedTimeRangePicker);
-
-const getStyles = stylesFactory((theme: GrafanaTheme) => {
+const getStyles = (theme: GrafanaTheme2) => {
   return {
-    container: css`
-      position: relative;
-      display: flex;
-      vertical-align: middle;
-    `,
-  };
-});
+    container: css({
+      position: 'relative',
+      display: 'flex',
+      verticalAlign: 'middle',
+    }),
+    backdrop: css({
+      display: 'none',
+      [theme.breakpoints.down('sm')]: {
+        display: 'block',
+      },
+    }),
+    content: css({
+      position: 'absolute',
+      right: 0,
+      top: '116%',
+      zIndex: theme.zIndex.dropdown,
 
-const getLabelStyles = stylesFactory((theme: GrafanaTheme) => {
-  return {
-    container: css`
-      display: flex;
-      align-items: center;
-      white-space: nowrap;
-    `,
-    utc: css`
-      color: ${theme.palette.orange};
-      font-size: ${theme.typography.size.sm};
-      padding-left: 6px;
-      line-height: 28px;
-      vertical-align: bottom;
-      font-weight: ${theme.typography.weight.semibold};
-    `,
+      [theme.breakpoints.down('sm')]: {
+        position: 'fixed',
+        right: '50%',
+        top: '50%',
+        transform: 'translate(50%, -50%)',
+        zIndex: theme.zIndex.modal,
+      },
+    }),
   };
-});
+};
+
+const getLabelStyles = (theme: GrafanaTheme2) => {
+  return {
+    container: css({
+      display: 'flex',
+      alignItems: 'center',
+      whiteSpace: 'nowrap',
+    }),
+    utc: css({
+      color: theme.v1.palette.orange,
+      fontSize: theme.typography.size.sm,
+      paddingLeft: '6px',
+      lineHeight: '28px',
+      verticalAlign: 'bottom',
+      fontWeight: theme.typography.fontWeightMedium,
+    }),
+  };
+};

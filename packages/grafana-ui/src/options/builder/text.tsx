@@ -1,5 +1,5 @@
-import { OptionsWithTextFormatting } from '../models.gen';
 import { PanelOptionsEditorBuilder } from '@grafana/data';
+import { OptionsWithTextFormatting } from '@grafana/schema';
 
 /**
  * Adds common text control options to a visualization options

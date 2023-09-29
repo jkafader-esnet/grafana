@@ -1,9 +1,10 @@
-import React, { HTMLProps, useEffect } from 'react';
-import { useForm, Mode, DeepPartial, UnpackNestedValue, SubmitHandler } from 'react-hook-form';
-import { FormAPI } from '../../types';
 import { css } from '@emotion/css';
+import React, { HTMLProps, useEffect } from 'react';
+import { useForm, Mode, DeepPartial, UnpackNestedValue, SubmitHandler, FieldValues } from 'react-hook-form';
 
-interface FormProps<T> extends Omit<HTMLProps<HTMLFormElement>, 'onSubmit'> {
+import { FormAPI } from '../../types';
+
+interface FormProps<T extends FieldValues> extends Omit<HTMLProps<HTMLFormElement>, 'onSubmit' | 'children'> {
   validateOn?: Mode;
   validateOnMount?: boolean;
   validateFieldsOnMount?: string | string[];
@@ -14,7 +15,7 @@ interface FormProps<T> extends Omit<HTMLProps<HTMLFormElement>, 'onSubmit'> {
   maxWidth?: number | 'none';
 }
 
-export function Form<T>({
+export function Form<T extends FieldValues>({
   defaultValues,
   onSubmit,
   validateOnMount = false,
@@ -38,14 +39,14 @@ export function Form<T>({
 
   return (
     <form
-      className={css`
-        max-width: ${maxWidth !== 'none' ? maxWidth + 'px' : maxWidth};
-        width: 100%;
-      `}
+      className={css({
+        maxWidth: maxWidth !== 'none' ? maxWidth + 'px' : maxWidth,
+        width: '100%',
+      })}
       onSubmit={handleSubmit(onSubmit)}
       {...htmlProps}
     >
-      {children({ errors: formState.errors, formState, ...rest })}
+      {children({ errors: formState.errors, formState, trigger, ...rest })}
     </form>
   );
 }

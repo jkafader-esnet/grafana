@@ -19,12 +19,14 @@
       ]
     },
     "editable": true,
-    "gnetId": null,
     "graphTooltip": 0,
     "links": [],
     "panels": [
       {
-        "datasource": "-- Dashboard --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Dashboard --"
+        },
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -39,8 +41,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -72,7 +73,10 @@
         "type": "table"
       },
       {
-        "datasource": "-- Dashboard --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Dashboard --"
+        },
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -87,8 +91,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -146,7 +149,6 @@
         "type": "table"
       },
       {
-        "datasource": null,
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -157,8 +159,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -209,7 +210,6 @@
         "type": "stat"
       },
       {
-        "datasource": null,
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -221,8 +221,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -271,7 +270,10 @@
         "type": "gauge"
       },
       {
-        "datasource": "-- Dashboard --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Dashboard --"
+        },
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -286,8 +288,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -319,7 +320,10 @@
         "type": "table"
       },
       {
-        "datasource": "-- Dashboard --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Dashboard --"
+        },
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -334,8 +338,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -393,7 +396,6 @@
         "type": "table"
       },
       {
-        "datasource": null,
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -404,8 +406,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -454,7 +455,6 @@
         "type": "bargauge"
       },
       {
-        "datasource": null,
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -466,8 +466,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 }
               ]
             }
@@ -530,7 +529,6 @@
         "type": "gauge"
       },
       {
-        "datasource": null,
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -541,8 +539,7 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
-                  "value": null
+                  "color": "green"
                 },
                 {
                   "color": "red",
@@ -594,9 +591,8 @@
       }
     ],
     "refresh": "",
-    "schemaVersion": 30,
-    "style": "dark",
-    "tags": [
+    "schemaVersion": 33,
+      "tags": [
       "gdev",
       "transform"
     ],

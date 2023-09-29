@@ -1,10 +1,11 @@
 import { map } from 'rxjs/operators';
 
-import { DataTransformerID } from './ids';
-import { DataTransformerInfo } from '../../types/transformations';
-import { DataFrame } from '../../types';
-import { getFieldDisplayName } from '../../field';
 import { sortDataFrame } from '../../dataframe';
+import { getFieldDisplayName } from '../../field';
+import { DataFrame } from '../../types';
+import { DataTransformerInfo } from '../../types/transformations';
+
+import { DataTransformerID } from './ids';
 
 export interface SortByField {
   field: string;
@@ -21,13 +22,13 @@ export interface SortByTransformerOptions {
 export const sortByTransformer: DataTransformerInfo<SortByTransformerOptions> = {
   id: DataTransformerID.sortBy,
   name: 'Sort by',
-  description: 'Sort fields in a frame',
+  description: 'Sort fields in a frame.',
   defaultOptions: {
     fields: {},
   },
 
   /**
-   * Return a modified copy of the series.  If the transform is not or should not
+   * Return a modified copy of the series. If the transform is not or should not
    * be applied, just return the input series
    */
   operator: (options) => (source) =>

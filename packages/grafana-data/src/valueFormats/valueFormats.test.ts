@@ -1,7 +1,8 @@
-import { toFixed, getValueFormat, scaledUnits, formattedValueToString } from './valueFormats';
-import { DecimalCount } from '../types/displayValue';
-import { TimeZone } from '../types';
 import { dateTime } from '../datetime';
+import { TimeZone } from '../types';
+import { DecimalCount } from '../types/displayValue';
+
+import { toFixed, getValueFormat, scaledUnits, formattedValueToString } from './valueFormats';
 
 interface ValueFormatTest {
   id: string;
@@ -39,6 +40,7 @@ describe('valueFormats', () => {
     ${'kbytes'}           | ${undefined} | ${10000000}                                 | ${'9.54 GiB'}
     ${'deckbytes'}        | ${undefined} | ${10000000}                                 | ${'10 GB'}
     ${'megwatt'}          | ${3}         | ${1000}                                     | ${'1.000 GW'}
+    ${'mohm'}             | ${3}         | ${1000}                                     | ${'1.000 Ω'}
     ${'kohm'}             | ${3}         | ${1000}                                     | ${'1.000 MΩ'}
     ${'Mohm'}             | ${3}         | ${1000}                                     | ${'1.000 GΩ'}
     ${'farad'}            | ${3}         | ${1000}                                     | ${'1.000 kF'}
@@ -53,6 +55,7 @@ describe('valueFormats', () => {
     ${'b'}                | ${0}         | ${1532.82}                                  | ${'1533 b'}
     ${'prefix:b'}         | ${undefined} | ${1532.82}                                  | ${'b1533'}
     ${'suffix:d'}         | ${undefined} | ${1532.82}                                  | ${'1533 d'}
+    ${'si:µF'}            | ${2}         | ${0}                                        | ${'0.00 µF'}
     ${'si:µF'}            | ${2}         | ${1234}                                     | ${'1.23 mF'}
     ${'si:µF'}            | ${2}         | ${1234000000}                               | ${'1.23 kF'}
     ${'si:µF'}            | ${2}         | ${1234000000000000}                         | ${'1.23 GF'}
@@ -92,6 +95,15 @@ describe('valueFormats', () => {
 
       expect(toFixed(100.4)).toBe('100');
       expect(toFixed(100.5)).toBe('101');
+      expect(toFixed(27.4)).toBe('27.4');
+      expect(toFixed(27.5)).toBe('27.5');
+
+      expect(toFixed(-100)).toBe('-100');
+
+      expect(toFixed(-100.5)).toBe('-100');
+      expect(toFixed(-100.6)).toBe('-101');
+      expect(toFixed(-27.5)).toBe('-27.5');
+      expect(toFixed(-27.6)).toBe('-27.6');
     });
 
     it('toFixed should handle number correctly if decimal is not null', () => {
@@ -102,6 +114,9 @@ describe('valueFormats', () => {
 
       expect(toFixed(100.4, 2)).toBe('100.40');
       expect(toFixed(100.5, 2)).toBe('100.50');
+
+      expect(toFixed(0, 1)).toBe('0.0');
+      expect(toFixed(0, 2)).toBe('0.00');
     });
   });
 

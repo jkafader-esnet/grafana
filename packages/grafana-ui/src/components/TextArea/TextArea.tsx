@@ -1,6 +1,8 @@
-import React, { HTMLProps } from 'react';
-import { GrafanaTheme2 } from '@grafana/data';
 import { css, cx } from '@emotion/css';
+import React, { HTMLProps } from 'react';
+
+import { GrafanaTheme2 } from '@grafana/data';
+
 import { stylesFactory, useTheme2 } from '../../themes';
 import { getFocusStyle, sharedInputStyle } from '../Forms/commonStyles';
 
@@ -20,13 +22,14 @@ const getTextAreaStyle = stylesFactory((theme: GrafanaTheme2, invalid = false) =
   return {
     textarea: cx(
       sharedInputStyle(theme),
-      getFocusStyle(theme.v1),
-      css`
-        border-radius: ${theme.shape.borderRadius()};
-        padding: ${theme.spacing.gridSize / 4}px ${theme.spacing.gridSize}px;
-        width: 100%;
-        border-color: ${invalid ? theme.colors.error.border : theme.components.input.borderColor};
-      `
+      getFocusStyle(theme),
+      css({
+        display: 'block',
+        borderRadius: theme.shape.radius.default,
+        padding: `${theme.spacing.gridSize / 4}px ${theme.spacing.gridSize}px`,
+        width: '100%',
+        borderColor: invalid ? theme.colors.error.border : theme.components.input.borderColor,
+      })
     ),
   };
 });

@@ -9,26 +9,17 @@ import 'vendor/flot/jquery.flot.dashes';
 import './jquery.flot.events';
 
 import $ from 'jquery';
-import { min as _min, max as _max, clone, find, isUndefined, map, toNumber, sortBy as _sortBy, flatten } from 'lodash';
-import { tickStep } from 'app/core/utils/ticks';
-import { coreModule, updateLegendValues } from 'app/core/core';
-import GraphTooltip from './graph_tooltip';
-import { ThresholdManager } from './threshold_manager';
-import { TimeRegionManager } from './time_region_manager';
-import { EventManager } from 'app/features/annotations/all';
-import { convertToHistogramData } from './histogram';
-import { alignYLevel } from './align_yaxes';
-import config from 'app/core/config';
+import { clone, find, flatten, isUndefined, map, max as _max, min as _min, sortBy as _sortBy, toNumber } from 'lodash';
 import React from 'react';
-import ReactDOM from 'react-dom';
-import { GraphLegendProps, Legend } from './Legend/Legend';
+import { createRoot, Root } from 'react-dom/client';
 
-import { GraphCtrl } from './module';
-import { graphTickFormatter, graphTimeFormat, IconName, MenuItemProps, MenuItemsGroup } from '@grafana/ui';
-import { provideTheme } from 'app/core/utils/ConfigProvider';
 import {
   DataFrame,
   DataFrameView,
+  DataHoverClearEvent,
+  DataHoverEvent,
+  DataHoverPayload,
+  DecimalCount,
   FieldDisplay,
   FieldType,
   formattedValueToString,
@@ -37,19 +28,38 @@ import {
   getTimeField,
   getValueFormat,
   hasLinks,
+  LegacyEventHandler,
   LegacyGraphHoverClearEvent,
   LegacyGraphHoverEvent,
+  LegacyGraphHoverEventPayload,
   LinkModelSupplier,
   PanelEvents,
   toUtc,
 } from '@grafana/data';
-import { GraphContextMenuCtrl } from './GraphContextMenuCtrl';
-import { TimeSrv } from 'app/features/dashboard/services/TimeSrv';
+import { graphTickFormatter, graphTimeFormat, MenuItemProps, MenuItemsGroup } from '@grafana/ui';
+import { coreModule } from 'app/angular/core_module';
+import config from 'app/core/config';
+import { updateLegendValues } from 'app/core/core';
 import { ContextSrv } from 'app/core/services/context_srv';
+import { provideTheme } from 'app/core/utils/ConfigProvider';
+import { tickStep } from 'app/core/utils/ticks';
+import { TimeSrv } from 'app/features/dashboard/services/TimeSrv';
 import { getFieldLinksSupplier } from 'app/features/panel/panellinks/linkSuppliers';
+
 import { DashboardModel } from '../../../features/dashboard/state';
 
-const LegendWithThemeProvider = provideTheme(Legend);
+import { GraphContextMenuCtrl } from './GraphContextMenuCtrl';
+import { GraphLegendProps, Legend } from './Legend/Legend';
+import { alignYLevel } from './align_yaxes';
+import { EventManager } from './event_manager';
+import GraphTooltip from './graph_tooltip';
+import { convertToHistogramData } from './histogram';
+import { GraphCtrl } from './module';
+import { ThresholdManager } from './threshold_manager';
+import { TimeRegionManager } from './time_region_manager';
+import { isLegacyGraphHoverEvent } from './utils';
+
+const LegendWithThemeProvider = provideTheme(Legend, config.theme2);
 
 class GraphElement {
   ctrl: GraphCtrl;
@@ -63,11 +73,18 @@ class GraphElement {
   data: any[] = [];
   panelWidth: number;
   eventManager: EventManager;
-  thresholdManager?: ThresholdManager;
+  thresholdManager: ThresholdManager;
   timeRegionManager: TimeRegionManager;
   declare legendElem: HTMLElement;
+  declare legendElemRoot: Root;
 
-  constructor(private scope: any, private elem: JQuery, private timeSrv: TimeSrv) {
+  constructor(
+    private scope: any,
+    private elem: JQuery & {
+      bind(eventType: string, handler: (eventObject: JQueryEventObject, ...args: any[]) => any): JQuery; // need to extend with Plot
+    },
+    private timeSrv: TimeSrv
+  ) {
     this.ctrl = scope.ctrl;
     this.contextMenu = scope.ctrl.contextMenuCtrl;
     this.dashboard = this.ctrl.dashboard;
@@ -76,10 +93,7 @@ class GraphElement {
 
     this.panelWidth = 0;
     this.eventManager = new EventManager(this.ctrl);
-    // unified alerting does not support threshold for graphs, at least for now
-    if (!config.featureToggles.ngalert) {
-      this.thresholdManager = new ThresholdManager(this.ctrl);
-    }
+    this.thresholdManager = new ThresholdManager(this.ctrl);
     this.timeRegionManager = new TimeRegionManager(this.ctrl);
     // @ts-ignore
     this.tooltip = new GraphTooltip(this.elem, this.ctrl.dashboard, this.scope, () => {
@@ -95,6 +109,9 @@ class GraphElement {
     this.ctrl.dashboard.events.on(LegacyGraphHoverEvent.type, this.onGraphHover.bind(this), this.scope);
     this.ctrl.dashboard.events.on(LegacyGraphHoverClearEvent.type, this.onGraphHoverClear.bind(this), this.scope);
 
+    this.ctrl.dashboard.events.on(DataHoverEvent.type, this.onGraphHover.bind(this), this.scope);
+    this.ctrl.dashboard.events.on(DataHoverClearEvent.type, this.onGraphHoverClear.bind(this), this.scope);
+
     // plot events
     this.elem.bind('plotselected', this.onPlotSelected.bind(this));
     this.elem.bind('plotclick', this.onPlotClick.bind(this));
@@ -102,6 +119,7 @@ class GraphElement {
     // get graph legend element
     if (this.elem && this.elem.parent) {
       this.legendElem = this.elem.parent().find('.graph-legend')[0];
+      this.legendElemRoot = createRoot(this.legendElem);
     }
   }
 
@@ -118,9 +136,14 @@ class GraphElement {
 
     if (!this.panel.legend.show) {
       if (this.legendElem.hasChildNodes()) {
-        ReactDOM.unmountComponentAtNode(this.legendElem);
+        this.legendElemRoot.render(null);
       }
-      this.renderPanel();
+      // we need to wait for react to finish rendering the legend before we can render the graph
+      // this is a slightly worse version of the `renderCallback` logic we use below
+      // the problem here is there's nothing to pass a `renderCallback` to since we don't want to render the legend at all.
+      setTimeout(() => {
+        this.renderPanel();
+      });
       return;
     }
 
@@ -137,24 +160,36 @@ class GraphElement {
       onToggleSort: this.ctrl.onToggleSort,
       onColorChange: this.ctrl.onColorChange,
       onToggleAxis: this.ctrl.onToggleAxis,
+      renderCallback: this.renderPanel.bind(this),
     };
 
     const legendReactElem = React.createElement(LegendWithThemeProvider, legendProps);
-    ReactDOM.render(legendReactElem, this.legendElem, () => this.renderPanel());
+
+    // render callback isn't supported in react 18+, see: https://github.com/reactwg/react-18/discussions/5
+    this.legendElemRoot.render(legendReactElem);
   }
 
-  onGraphHover(evt: any) {
+  onGraphHover(evt: LegacyGraphHoverEventPayload | DataHoverPayload) {
     // ignore other graph hover events if shared tooltip is disabled
     if (!this.dashboard.sharedTooltipModeEnabled()) {
       return;
     }
 
-    // ignore if we are the emitter
-    if (!this.plot || evt.panel.id === this.panel.id || this.ctrl.otherPanelInFullscreenMode()) {
+    if (isLegacyGraphHoverEvent(evt)) {
+      // ignore if we are the emitter
+      if (!this.plot || evt.panel?.id === this.panel.id || this.ctrl.otherPanelInFullscreenMode()) {
+        return;
+      }
+
+      this.tooltip.show(evt.pos);
+    }
+
+    // DataHoverEvent can come from multiple panels that doesn't include x position
+    if (!evt.point?.time) {
       return;
     }
 
-    this.tooltip.show(evt.pos);
+    this.tooltip.show({ x: evt.point.time, panelRelY: evt.point.panelRelY ?? 1 });
   }
 
   onPanelTeardown() {
@@ -167,10 +202,10 @@ class GraphElement {
     this.elem.off();
     this.elem.remove();
 
-    ReactDOM.unmountComponentAtNode(this.legendElem);
+    this.legendElemRoot.unmount();
   }
 
-  onGraphHoverClear(event: any, info: any) {
+  onGraphHoverClear(handler: LegacyEventHandler<any>) {
     if (this.plot) {
       this.tooltip.clear(this.plot);
     }
@@ -231,7 +266,7 @@ class GraphElement {
               ariaLabel: link.title,
               url: link.href,
               target: link.target,
-              icon: `${link.target === '_self' ? 'link' : 'external-link-alt'}` as IconName,
+              icon: link.target === '_self' ? 'link' : 'external-link-alt',
               onClick: link.onClick,
             };
           }),
@@ -291,7 +326,7 @@ class GraphElement {
           field: { config: fieldConfig, type: FieldType.number },
           theme: config.theme2,
           timeZone: this.dashboard.getTimezone(),
-        })(field.values.get(dataIndex));
+        })(field.values[dataIndex]);
         linksSupplier = links.length
           ? getFieldLinksSupplier({
               display: fieldDisplay,
@@ -335,13 +370,13 @@ class GraphElement {
       return dataIndex;
     }
 
-    const field = timeField.values.get(dataIndex);
+    const field = timeField.values[dataIndex];
 
     if (field === ts) {
       return dataIndex;
     }
 
-    const correctIndex = timeField.values.toArray().findIndex((value) => value === ts);
+    const correctIndex = timeField.values.findIndex((value) => value === ts);
     return correctIndex > -1 ? correctIndex : dataIndex;
   }
 
@@ -382,9 +417,7 @@ class GraphElement {
       }
       msg.appendTo(this.elem);
     }
-    if (this.thresholdManager) {
-      this.thresholdManager.draw(plot);
-    }
+    this.thresholdManager.draw(plot);
     this.timeRegionManager.draw(plot);
   }
 
@@ -455,9 +488,7 @@ class GraphElement {
     }
 
     // give space to alert editing
-    if (this.thresholdManager) {
-      this.thresholdManager.prepare(this.elem, this.data);
-    }
+    this.thresholdManager.prepare(this.elem, this.data);
 
     // un-check dashes if lines are unchecked
     this.panel.dashes = this.panel.lines ? this.panel.dashes : false;
@@ -466,9 +497,7 @@ class GraphElement {
     const options: any = this.buildFlotOptions(this.panel);
     this.prepareXAxis(options, this.panel);
     this.configureYAxisOptions(this.data, options);
-    if (this.thresholdManager) {
-      this.thresholdManager.addFlotOptions(options, this.panel);
-    }
+    this.thresholdManager.addFlotOptions(options, this.panel);
     this.timeRegionManager.addFlotOptions(options, this.panel);
     this.eventManager.addFlotEvents(this.annotations, options);
     this.sortedSeries = this.sortSeries(this.data, this.panel);
@@ -553,7 +582,7 @@ class GraphElement {
       }
     } catch (e) {
       console.error('flotcharts error', e);
-      this.ctrl.error = e.message || 'Render Error';
+      this.ctrl.error = e instanceof Error ? e.message : 'Render Error';
       this.ctrl.renderError = true;
     }
 
@@ -927,11 +956,7 @@ class GraphElement {
     return ticks;
   }
 
-  configureAxisMode(
-    axis: { tickFormatter: (val: any, axis: any) => string },
-    format: string,
-    decimals?: number | null
-  ) {
+  configureAxisMode(axis: { tickFormatter: (val: any, axis: any) => string }, format: string, decimals?: DecimalCount) {
     axis.tickFormatter = (val, axis) => {
       const formatter = getValueFormat(format);
 
@@ -944,7 +969,8 @@ class GraphElement {
   }
 }
 
-/** @ngInject */
+coreModule.directive('grafanaGraph', ['timeSrv', 'popoverSrv', 'contextSrv', graphDirective]);
+
 function graphDirective(timeSrv: TimeSrv, popoverSrv: any, contextSrv: ContextSrv) {
   return {
     restrict: 'A',
@@ -955,5 +981,4 @@ function graphDirective(timeSrv: TimeSrv, popoverSrv: any, contextSrv: ContextSr
   };
 }
 
-coreModule.directive('grafanaGraph', graphDirective);
 export { GraphElement, graphDirective };

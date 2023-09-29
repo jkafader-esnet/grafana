@@ -1,6 +1,8 @@
+import { reject } from 'lodash';
 import { Observable, of, OperatorFunction, ReplaySubject, Unsubscribable } from 'rxjs';
 import { catchError, map, share } from 'rxjs/operators';
 import { v4 as uuidv4 } from 'uuid';
+
 import {
   dataFrameFromJSON,
   DataFrameJSON,
@@ -10,17 +12,20 @@ import {
   rangeUtil,
   TimeRange,
   withLoadingIndicator,
+  preProcessPanelData,
 } from '@grafana/data';
-import { FetchResponse, toDataQueryError } from '@grafana/runtime';
+import { FetchResponse, getDataSourceSrv, toDataQueryError, DataSourceWithBackend } from '@grafana/runtime';
 import { BackendSrv, getBackendSrv } from 'app/core/services/backend_srv';
-import { preProcessPanelData } from 'app/features/query/state/runRequest';
-import { AlertQuery } from 'app/types/unified-alerting-dto';
-import { getTimeRangeForExpression } from '../utils/timeRange';
 import { isExpressionQuery } from 'app/features/expressions/guards';
-import { setStructureRevision } from 'app/features/query/state/processing/revision';
 import { cancelNetworkRequestsOnUnsubscribe } from 'app/features/query/state/processing/canceler';
+import { setStructureRevision } from 'app/features/query/state/processing/revision';
+import { AlertQuery } from 'app/types/unified-alerting-dto';
+
+import { getTimeRangeForExpression } from '../utils/timeRange';
 
 export interface AlertingQueryResult {
+  error?: string;
+  status?: number; // HTTP status error
   frames: DataFrameJSON[];
 }
 
@@ -32,7 +37,10 @@ export class AlertingQueryRunner {
   private subscription?: Unsubscribable;
   private lastResult: Record<string, PanelData>;
 
-  constructor(private backendSrv = getBackendSrv()) {
+  constructor(
+    private backendSrv = getBackendSrv(),
+    private dataSourceSrv = getDataSourceSrv()
+  ) {
     this.subject = new ReplaySubject(1);
     this.lastResult = {};
   }
@@ -41,13 +49,37 @@ export class AlertingQueryRunner {
     return this.subject.asObservable();
   }
 
-  run(queries: AlertQuery[]) {
-    if (queries.length === 0) {
-      const empty = initialState(queries, LoadingState.Done);
+  async run(queries: AlertQuery[]) {
+    const empty = initialState(queries, LoadingState.Done);
+    const queriesToExclude: string[] = [];
+
+    // do not execute if one more of the queries are not runnable,
+    // for example not completely configured
+    for (const query of queries) {
+      const refId = query.model.refId;
+
+      if (isExpressionQuery(query.model)) {
+        continue;
+      }
+
+      const dataSourceInstance = await this.dataSourceSrv.get(query.datasourceUid);
+      const skipRunningQuery =
+        dataSourceInstance instanceof DataSourceWithBackend &&
+        dataSourceInstance.filterQuery &&
+        !dataSourceInstance.filterQuery(query.model);
+
+      if (skipRunningQuery) {
+        queriesToExclude.push(refId);
+      }
+    }
+
+    const queriesToRun = reject(queries, (q) => queriesToExclude.includes(q.model.refId));
+
+    if (queriesToRun.length === 0) {
       return this.subject.next(empty);
     }
 
-    this.subscription = runRequest(this.backendSrv, queries).subscribe({
+    this.subscription = runRequest(this.backendSrv, queriesToRun).subscribe({
       next: (dataPerQuery) => {
         const nextResult = applyChange(dataPerQuery, (refId, data) => {
           const previous = this.lastResult[refId];
@@ -153,10 +185,16 @@ const mapToPanelData = (
     const results: Record<string, PanelData> = {};
 
     for (const [refId, result] of Object.entries(data.results)) {
+      const { error, status, frames = [] } = result;
+
+      // extract errors from the /eval results
+      const errors = error ? [{ message: error, refId, status }] : [];
+
       results[refId] = {
+        errors,
         timeRange: dataByQuery[refId].timeRange,
         state: LoadingState.Done,
-        series: result.frames.map(dataFrameFromJSON),
+        series: frames.map(dataFrameFromJSON),
       };
     }
 

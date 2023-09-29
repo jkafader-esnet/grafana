@@ -1,7 +1,10 @@
-import { QueryRunners, variableDummyRefId } from './queryRunners';
-import { getDefaultTimeRange, VariableSupportType } from '@grafana/data';
-import { VariableRefresh } from '../types';
 import { of } from 'rxjs';
+
+import { getDefaultTimeRange, VariableSupportType } from '@grafana/data';
+
+import { VariableRefresh } from '../types';
+
+import { QueryRunners, variableDummyRefId } from './queryRunners';
 
 describe('QueryRunners', () => {
   describe('when using a legacy data source', () => {
@@ -193,7 +196,7 @@ describe('QueryRunners', () => {
 
       it('then it should call runRequest with correct args', () => {
         expect(runRequest).toHaveBeenCalledTimes(1);
-        expect(runRequest).toHaveBeenCalledWith(datasource, {}, datasource.variables.query);
+        expect(runRequest).toHaveBeenCalledWith(datasource, {}, expect.anything());
       });
     });
 
@@ -260,7 +263,7 @@ describe('QueryRunners', () => {
 
       it('then it should call runRequest with correct args', () => {
         expect(runRequest).toHaveBeenCalledTimes(1);
-        expect(runRequest).toHaveBeenCalledWith(datasource, {}, datasource.variables.query);
+        expect(runRequest).toHaveBeenCalledWith(datasource, {}, expect.anything());
       });
     });
   });

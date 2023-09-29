@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
+
 import { DataFrame, Field, getFieldDisplayName, SelectableValue } from '@grafana/data';
+
+import { getFieldTypeIcon } from '../../types';
 
 /**
  * @internal
@@ -26,9 +29,12 @@ export function frameHasName(name: string | undefined, names: FrameFieldsDisplay
 }
 
 /**
- * Retuns the distinct names in a set of frames
+ * Returns the distinct names in a set of frames
  */
-function getFrameFieldsDisplayNames(data: DataFrame[], filter?: (field: Field) => boolean): FrameFieldsDisplayNames {
+export function getFrameFieldsDisplayNames(
+  data: DataFrame[],
+  filter?: (field: Field) => boolean
+): FrameFieldsDisplayNames {
   const names: FrameFieldsDisplayNames = {
     display: new Set<string>(),
     raw: new Set<string>(),
@@ -67,7 +73,8 @@ export function useFieldDisplayNames(data: DataFrame[], filter?: (field: Field) 
 export function useSelectOptions(
   displayNames: FrameFieldsDisplayNames,
   currentName?: string,
-  firstItem?: SelectableValue<string>
+  firstItem?: SelectableValue<string>,
+  fieldType?: string
 ): Array<SelectableValue<string>> {
   return useMemo(() => {
     let found = false;
@@ -79,10 +86,14 @@ export function useSelectOptions(
       if (!found && name === currentName) {
         found = true;
       }
-      options.push({
-        value: name,
-        label: name,
-      });
+      const field = displayNames.fields.get(name);
+      if (!fieldType || fieldType === field?.type) {
+        options.push({
+          value: name,
+          label: name,
+          icon: field ? getFieldTypeIcon(field) : undefined,
+        });
+      }
     }
     for (const name of displayNames.raw) {
       if (!displayNames.display.has(name)) {
@@ -103,5 +114,5 @@ export function useSelectOptions(
       });
     }
     return options;
-  }, [displayNames, currentName, firstItem]);
+  }, [displayNames, currentName, firstItem, fieldType]);
 }

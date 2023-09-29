@@ -1,6 +1,6 @@
-import { Duration, Interval } from 'date-fns';
-import intervalToDuration from 'date-fns/intervalToDuration';
+import { Duration, Interval, isAfter } from 'date-fns';
 import add from 'date-fns/add';
+import intervalToDuration from 'date-fns/intervalToDuration';
 
 const durationMap: { [key in Required<keyof Duration>]: string[] } = {
   years: ['y', 'Y', 'years'],
@@ -13,7 +13,7 @@ const durationMap: { [key in Required<keyof Duration>]: string[] } = {
 };
 
 /**
- * intervalToAbbreviatedDurationString convers interval to readable duration string
+ * intervalToAbbreviatedDurationString converts interval to readable duration string
  *
  * @param interval - interval to convert
  * @param includeSeconds - optional, default true. If false, will not include seconds unless interval is less than 1 minute
@@ -21,6 +21,12 @@ const durationMap: { [key in Required<keyof Duration>]: string[] } = {
  * @public
  */
 export function intervalToAbbreviatedDurationString(interval: Interval, includeSeconds = true): string {
+  // An edge case that causes the app to crash (e.g. browser's clock behind the rule/alert date)
+  // The code will again return a proper duration when the browser's clock >= rule/alert date
+  if (isAfter(interval.start, interval.end)) {
+    return '';
+  }
+
   const duration = intervalToDuration(interval);
   return (Object.entries(duration) as Array<[keyof Duration, number | undefined]>).reduce((str, [unit, value]) => {
     if (value && value !== 0 && !(unit === 'seconds' && !includeSeconds && str)) {
@@ -35,19 +41,25 @@ export function intervalToAbbreviatedDurationString(interval: Interval, includeS
 /**
  * parseDuration parses duration string into datefns Duration object
  *
- * @param duration - string to convert. For example '2m', '5h 20s'
+ * @param durationString - string to convert. For example '2m', '5h 20s'
  *
  * @public
  */
-export function parseDuration(duration: string): Duration {
-  return duration.split(' ').reduce<Duration>((acc, value) => {
+export function parseDuration(durationString: string): Duration {
+  return durationString.split(' ').reduce<Duration>((acc, value) => {
     const match = value.match(/(\d+)(.+)/);
-    if (match === null || match.length !== 3) {
+
+    const rawLength = match?.[1];
+    const unit = match?.[2];
+
+    if (!(rawLength && unit)) {
       return acc;
     }
 
-    const key = Object.entries(durationMap).find(([_, abbreviations]) => abbreviations?.includes(match[2]))?.[0];
-    return !key ? acc : { ...acc, [key]: match[1] };
+    const mapping = Object.entries(durationMap).find(([_, abbreviations]) => abbreviations?.includes(match[2]));
+    const length = parseInt(rawLength, 10);
+
+    return mapping ? { ...acc, [mapping[0]]: length } : acc;
   }, {});
 }
 
@@ -84,4 +96,80 @@ export function durationToMilliseconds(duration: Duration): number {
  */
 export function isValidDate(dateString: string): boolean {
   return !isNaN(Date.parse(dateString));
+}
+
+/**
+ * isValidDuration returns true if the given string can be parsed into a valid `date-fns` `Duration` object, false otherwise
+ *
+ * Valid time units are "y", "Y", "years", "M", "months", "w", "W", "weeks", "d", "D", "days", "h", "H", "hours", "m", "minutes", "s", "S", "seconds"
+ *
+ * @see https://date-fns.org/v2.30.0/docs/Duration
+ * @param durationString - string representation of a duration
+ *
+ * @public
+ */
+export function isValidDuration(durationString: string): boolean {
+  for (const value of durationString.trim().split(' ')) {
+    const match = value.match(/(\d+)(.+)/);
+    if (match === null || match.length !== 3) {
+      return false;
+    }
+
+    const key = Object.entries(durationMap).find(([_, abbreviations]) => abbreviations?.includes(match[2]))?.[0];
+    if (!key) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * isValidGoDuration returns true if the given string can be parsed into a valid Duration object based on
+ * Go's time.parseDuration, false otherwise.
+ *
+ * Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+ *
+ * @see https://pkg.go.dev/time#ParseDuration
+ *
+ * @param durationString - string representation of a duration
+ *
+ * @internal
+ */
+export function isValidGoDuration(durationString: string): boolean {
+  const timeUnits = ['h', 'm', 's', 'ms', 'us', 'µs', 'ns'];
+  return validateDurationByUnits(durationString, timeUnits);
+}
+
+/**
+ * isValidGrafanaDuration returns `true` if the given string can be parsed into a valid Duration object based on
+ * the Grafana SDK's gtime.parseDuration, `false` otherwise.
+ *
+ * Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h", "d", "w", "M", "y".
+ *
+ * @see https://pkg.go.dev/github.com/grafana/grafana-plugin-sdk-go/backend/gtime#ParseDuration
+ *
+ * @param durationString - string representation of a duration
+ *
+ * @internal
+ */
+export function isValidGrafanaDuration(durationString: string): boolean {
+  const timeUnits = ['y', 'M', 'w', 'd', 'h', 'm', 's', 'ms', 'us', 'µs', 'ns'];
+  return validateDurationByUnits(durationString, timeUnits);
+}
+
+function validateDurationByUnits(durationString: string, timeUnits: string[]): boolean {
+  for (const value of durationString.trim().split(' ')) {
+    const match = value.match(/([0-9]*[.]?[0-9]+)(.+)/);
+    if (match === null || match.length !== 3) {
+      return false;
+    }
+
+    const isValidUnit = timeUnits.includes(match[2]);
+    if (!isValidUnit) {
+      return false;
+    }
+  }
+
+  return true;
 }

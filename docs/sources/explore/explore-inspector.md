@@ -1,7 +1,12 @@
-+++
-title = "Inspector in Explore"
-weight = 400
-+++
+---
+labels:
+  products:
+    - cloud
+    - enterprise
+    - oss
+title: Inspector in Explore
+weight: 400
+---
 
 # Inspector in Explore
 
@@ -43,7 +48,7 @@ For multiple queries or for queries multiple nodes, there are additional options
 
 Grafana generates a CSV file in your default browser download location. You can open it in the viewer of your choice.
 
-1. In the **Inspector** tab, raw query results following instructions in (### Inspect raw query results).
+1. In the **Inspector** tab, get raw query results by following the instructions [described in Inspect raw query results](#inspect-raw-query-results).
 1. Refine query settings until you can see the raw data that you want to export.
 1. Click **Download CSV**.
 
@@ -56,6 +61,14 @@ Grafana generates a TXT file in your default browser download location. You can 
 1. Open the inspector.
 1. Inspect the log query results as described above.
 1. Click **Download logs**.
+
+### Download trace results
+
+Based on the data source type, Grafana generates a JSON file for the trace results in one of the supported formats: Jaeger, Zipkin, or OTLP formats.
+
+1. Open the inspector.
+1. Inspect the trace query results [as described above](#inspect-raw-query-results).
+1. Click **Download traces**.
 
 ### Inspect query performance
 

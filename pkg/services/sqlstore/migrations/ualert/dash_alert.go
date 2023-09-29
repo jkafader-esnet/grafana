@@ -36,10 +36,12 @@ SELECT id,
 	settings
 FROM
 	alert
+WHERE org_id IN (SELECT id from org)
+	AND dashboard_id IN (SELECT id from dashboard)
 `
 
-// slurpDashAlerts loads all alerts from the alert database table into the
-// the dashAlert type.
+// slurpDashAlerts loads all alerts from the alert database table into
+// the dashAlert type. If there are alerts that belong to either organization or dashboard that does not exist, those alerts will not be returned/
 // Additionally it unmarshals the json settings for the alert into the
 // ParsedSettings property of the dash alert.
 func (m *migration) slurpDashAlerts() ([]dashAlert, error) {
@@ -53,7 +55,8 @@ func (m *migration) slurpDashAlerts() ([]dashAlert, error) {
 	for i := range dashAlerts {
 		err = json.Unmarshal(dashAlerts[i].Settings, &dashAlerts[i].ParsedSettings)
 		if err != nil {
-			return nil, err
+			da := dashAlerts[i]
+			return nil, fmt.Errorf("failed to parse alert rule ID:%d, name:'%s', orgID:%d: %w", da.Id, da.Name, da.OrgId, err)
 		}
 	}
 
@@ -66,7 +69,7 @@ type dashAlertSettings struct {
 	NoDataState         string               `json:"noDataState"`
 	ExecutionErrorState string               `json:"executionErrorState"`
 	Conditions          []dashAlertCondition `json:"conditions"`
-	AlertRuleTags       map[string]string    `json:"alertRuleTags"`
+	AlertRuleTags       any                  `json:"alertRuleTags"`
 	Notifications       []dashAlertNot       `json:"notifications"`
 }
 
@@ -93,7 +96,7 @@ type dashAlertCondition struct {
 	} `json:"query"`
 
 	Reducer struct {
-		// Params []interface{} `json:"params"` (Unused)
+		// Params []any `json:"params"` (Unused)
 		Type string `json:"type"`
 	}
 }

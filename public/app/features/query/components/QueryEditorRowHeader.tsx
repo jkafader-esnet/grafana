@@ -1,9 +1,10 @@
-import React, { ReactNode, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { DataQuery, DataSourceInstanceSettings, GrafanaTheme } from '@grafana/data';
-import { DataSourcePicker } from '@grafana/runtime';
-import { Icon, Input, FieldValidationMessage, useStyles } from '@grafana/ui';
+import React, { ReactNode, useState } from 'react';
+
+import { DataQuery, DataSourceInstanceSettings, GrafanaTheme2 } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
+import { Icon, Input, FieldValidationMessage, useStyles2 } from '@grafana/ui';
+import { DataSourcePicker } from 'app/features/datasources/components/picker/DataSourcePicker';
 
 export interface Props<TQuery extends DataQuery = DataQuery> {
   query: TQuery;
@@ -15,12 +16,13 @@ export interface Props<TQuery extends DataQuery = DataQuery> {
   onChange: (query: TQuery) => void;
   onClick: (e: React.MouseEvent) => void;
   collapsedText: string | null;
+  alerting?: boolean;
 }
 
 export const QueryEditorRowHeader = <TQuery extends DataQuery>(props: Props<TQuery>) => {
-  const { query, queries, onClick, onChange, collapsedText, renderExtras, disabled } = props;
+  const { query, queries, onChange, collapsedText, renderExtras, disabled } = props;
 
-  const styles = useStyles(getStyles);
+  const styles = useStyles2(getStyles);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -69,9 +71,9 @@ export const QueryEditorRowHeader = <TQuery extends DataQuery>(props: Props<TQue
     onEndEditName(event.currentTarget.value.trim());
   };
 
-  const onKeyDown = (event: React.KeyboardEvent) => {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
-      onEndEditName((event.target as any).value);
+      onEndEditName(event.currentTarget.value);
     }
   };
 
@@ -80,46 +82,46 @@ export const QueryEditorRowHeader = <TQuery extends DataQuery>(props: Props<TQue
   };
 
   return (
-    <div className={styles.wrapper}>
-      {!isEditing && (
-        <button
-          className={styles.queryNameWrapper}
-          aria-label={selectors.components.QueryEditorRow.title(query.refId)}
-          title="Edit query name"
-          onClick={onEditQuery}
-          data-testid="query-name-div"
-        >
-          <span className={styles.queryName}>{query.refId}</span>
-          <Icon name="pen" className={styles.queryEditIcon} size="sm" />
-        </button>
-      )}
-      {isEditing && (
-        <>
-          <Input
-            type="text"
-            defaultValue={query.refId}
-            onBlur={onEditQueryBlur}
-            autoFocus
-            onKeyDown={onKeyDown}
-            onFocus={onFocus}
-            invalid={validationError !== null}
-            onChange={onInputChange}
-            className={styles.queryNameInput}
-            data-testid="query-name-input"
-          />
-          {validationError && <FieldValidationMessage horizontal>{validationError}</FieldValidationMessage>}
-        </>
-      )}
-      {renderDataSource(props, styles)}
-      {renderExtras && <div className={styles.itemWrapper}>{renderExtras()}</div>}
-      {disabled && <em className={styles.contextInfo}>Disabled</em>}
+    <>
+      <div className={styles.wrapper}>
+        {!isEditing && (
+          <button
+            className={styles.queryNameWrapper}
+            aria-label={selectors.components.QueryEditorRow.title(query.refId)}
+            title="Edit query name"
+            onClick={onEditQuery}
+            data-testid="query-name-div"
+            type="button"
+          >
+            <span className={styles.queryName}>{query.refId}</span>
+            <Icon name="pen" className={styles.queryEditIcon} size="sm" />
+          </button>
+        )}
 
-      {collapsedText && (
-        <div className={styles.collapsedText} onClick={onClick}>
-          {collapsedText}
-        </div>
-      )}
-    </div>
+        {isEditing && (
+          <>
+            <Input
+              type="text"
+              defaultValue={query.refId}
+              onBlur={onEditQueryBlur}
+              autoFocus
+              onKeyDown={onKeyDown}
+              onFocus={onFocus}
+              invalid={validationError !== null}
+              onChange={onInputChange}
+              className={styles.queryNameInput}
+              data-testid="query-name-input"
+            />
+            {validationError && <FieldValidationMessage horizontal>{validationError}</FieldValidationMessage>}
+          </>
+        )}
+        {renderDataSource(props, styles)}
+        {renderExtras && <div className={styles.itemWrapper}>{renderExtras()}</div>}
+        {disabled && <em className={styles.contextInfo}>Disabled</em>}
+      </div>
+
+      {collapsedText && <div className={styles.collapsedText}>{collapsedText}</div>}
+    </>
   );
 };
 
@@ -127,7 +129,7 @@ const renderDataSource = <TQuery extends DataQuery>(
   props: Props<TQuery>,
   styles: ReturnType<typeof getStyles>
 ): ReactNode => {
-  const { dataSource, onChangeDataSource } = props;
+  const { alerting, dataSource, onChangeDataSource } = props;
 
   if (!onChangeDataSource) {
     return <em className={styles.contextInfo}>({dataSource.name})</em>;
@@ -135,61 +137,57 @@ const renderDataSource = <TQuery extends DataQuery>(
 
   return (
     <div className={styles.itemWrapper}>
-      <DataSourcePicker current={dataSource.name} onChange={onChangeDataSource} />
+      <DataSourcePicker variables={true} alerting={alerting} current={dataSource.name} onChange={onChangeDataSource} />
     </div>
   );
 };
 
-const getStyles = (theme: GrafanaTheme) => {
+const getStyles = (theme: GrafanaTheme2) => {
   return {
     wrapper: css`
+      label: Wrapper;
       display: flex;
       align-items: center;
-      flex-grow: 1;
-      margin-left: ${theme.spacing.xs};
+      margin-left: ${theme.spacing(0.5)};
+      overflow: hidden;
+    `,
+    queryNameWrapper: css`
+      display: flex;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-radius: ${theme.shape.borderRadius(2)};
+      align-items: center;
+      padding: 0 0 0 ${theme.spacing(0.5)};
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
 
       &:hover {
-        .query-name-wrapper {
-          background: ${theme.colors.bg3};
-          border: 1px dashed ${theme.colors.border3};
-        }
+        background: ${theme.colors.action.hover};
+        border: 1px dashed ${theme.colors.border.strong};
+      }
 
+      &:focus {
+        border: 2px solid ${theme.colors.primary.border};
+      }
+
+      &:hover,
+      &:focus {
         .query-name-edit-icon {
           visibility: visible;
         }
       }
     `,
-    queryNameWrapper: cx(
-      css`
-        display: flex;
-        cursor: pointer;
-        border: 1px solid transparent;
-        border-radius: ${theme.border.radius.md};
-        align-items: center;
-        padding: 0 0 0 ${theme.spacing.xs};
-        margin: 0;
-        background: transparent;
-
-        &:focus {
-          border: 2px solid ${theme.colors.formInputBorderActive};
-
-          .query-name-edit-icon {
-            visibility: visible;
-          }
-        }
-      `,
-      'query-name-wrapper'
-    ),
     queryName: css`
-      font-weight: ${theme.typography.weight.semibold};
-      color: ${theme.colors.textBlue};
+      font-weight: ${theme.typography.fontWeightMedium};
+      color: ${theme.colors.primary.text};
       cursor: pointer;
       overflow: hidden;
-      margin-left: ${theme.spacing.xs};
+      margin-left: ${theme.spacing(0.5)};
     `,
     queryEditIcon: cx(
       css`
-        margin-left: ${theme.spacing.md};
+        margin-left: ${theme.spacing(2)};
         visibility: hidden;
       `,
       'query-name-edit-icon'
@@ -199,23 +197,22 @@ const getStyles = (theme: GrafanaTheme) => {
       margin: -4px 0;
     `,
     collapsedText: css`
-      font-weight: ${theme.typography.weight.regular};
-      font-size: ${theme.typography.size.sm};
-      color: ${theme.colors.textWeak};
-      padding-left: ${theme.spacing.sm};
+      font-weight: ${theme.typography.fontWeightRegular};
+      font-size: ${theme.typography.bodySmall.fontSize};
+      color: ${theme.colors.text.secondary};
+      padding-left: ${theme.spacing(1)};
       align-items: center;
       overflow: hidden;
       font-style: italic;
-      overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
-      min-width: 0;
     `,
     contextInfo: css`
-      font-size: ${theme.typography.size.sm};
+      font-size: ${theme.typography.bodySmall.fontSize};
       font-style: italic;
-      color: ${theme.colors.textWeak};
+      color: ${theme.colors.text.secondary};
       padding-left: 10px;
+      padding-right: 10px;
     `,
     itemWrapper: css`
       display: flex;

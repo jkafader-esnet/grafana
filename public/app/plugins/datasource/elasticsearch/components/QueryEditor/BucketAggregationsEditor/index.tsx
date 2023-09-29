@@ -1,19 +1,21 @@
 import React from 'react';
-import { BucketAggregationEditor } from './BucketAggregationEditor';
+
+import { Button } from '@grafana/ui';
+
 import { useDispatch } from '../../../hooks/useStatelessReducer';
-import { addBucketAggregation, removeBucketAggregation } from './state/actions';
-import { BucketAggregationAction } from './state/types';
-import { BucketAggregation } from './aggregations';
 import { useQuery } from '../ElasticsearchQueryContext';
 import { QueryEditorRow } from '../QueryEditorRow';
-import { IconButton } from '../../IconButton';
+
+import { BucketAggregation } from './../../../types';
+import { BucketAggregationEditor } from './BucketAggregationEditor';
+import { addBucketAggregation, removeBucketAggregation } from './state/actions';
 
 interface Props {
   nextId: BucketAggregation['id'];
 }
 
 export const BucketAggregationsEditor = ({ nextId }: Props) => {
-  const dispatch = useDispatch<BucketAggregationAction>();
+  const dispatch = useDispatch();
   const { bucketAggs } = useQuery();
   const totalBucketAggs = bucketAggs?.length || 0;
 
@@ -28,7 +30,14 @@ export const BucketAggregationsEditor = ({ nextId }: Props) => {
           <BucketAggregationEditor value={bucketAgg} />
 
           {index === 0 && (
-            <IconButton iconName="plus" onClick={() => dispatch(addBucketAggregation(nextId))} label="add" />
+            <Button
+              variant="secondary"
+              fill="text"
+              icon="plus"
+              onClick={() => dispatch(addBucketAggregation(nextId))}
+              tooltip="Add grouping condition"
+              aria-label="Add grouping condition"
+            />
           )}
         </QueryEditorRow>
       ))}

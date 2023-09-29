@@ -6,17 +6,17 @@ import (
 	apimodels "github.com/grafana/grafana/pkg/services/ngalert/api/tooling/definitions"
 )
 
-func (am *Alertmanager) GetStatus() apimodels.GettableStatus {
-	am.reloadConfigMtx.RLock()
-	defer am.reloadConfigMtx.RUnlock()
-
-	var amConfig apimodels.PostableApiAlertingConfig
-	if am.config != nil {
-		err := json.Unmarshal(am.config, &amConfig)
-		if err != nil {
-			// this should never error here, if the configuration is running it should be valid.
-			am.logger.Error("unable to marshal alertmanager configuration", "err", err)
-		}
+// TODO: We no longer do apimodels at this layer, move it to the API.
+func (am *alertmanager) GetStatus() apimodels.GettableStatus {
+	config := &apimodels.PostableUserConfig{}
+	status := am.Base.GetStatus()
+	if status == nil {
+		return *apimodels.NewGettableStatus(&config.AlertmanagerConfig)
 	}
-	return *apimodels.NewGettableStatus(&amConfig)
+
+	if err := json.Unmarshal(status, config); err != nil {
+		am.logger.Error("Unable to unmarshall alertmanager config", "Err", err)
+	}
+
+	return *apimodels.NewGettableStatus(&config.AlertmanagerConfig)
 }

@@ -1,15 +1,18 @@
 import React, { PureComponent } from 'react';
-import { hot } from 'react-hot-loader';
 import { connect, ConnectedProps } from 'react-redux';
-import { NavModel } from '@grafana/data';
-import { getNavModel } from 'app/core/selectors/navModel';
-import config from 'app/core/config';
-import Page from 'app/core/components/Page/Page';
-import { UserProfile } from './UserProfile';
-import { UserPermissions } from './UserPermissions';
-import { UserSessions } from './UserSessions';
-import { UserLdapSyncInfo } from './UserLdapSyncInfo';
+
+import { NavModelItem } from '@grafana/data';
+import { featureEnabled } from '@grafana/runtime';
+import { Page } from 'app/core/components/Page/Page';
+import { contextSrv } from 'app/core/core';
+import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
 import { StoreState, UserDTO, UserOrg, UserSession, SyncInfo, UserAdminError, AccessControlAction } from 'app/types';
+
+import { UserLdapSyncInfo } from './UserLdapSyncInfo';
+import { UserOrgs } from './UserOrgs';
+import { UserPermissions } from './UserPermissions';
+import { UserProfile } from './UserProfile';
+import { UserSessions } from './UserSessions';
 import {
   loadAdminUserPage,
   revokeSession,
@@ -25,12 +28,8 @@ import {
   deleteOrgUser,
   syncLdapUser,
 } from './state/actions';
-import { UserOrgs } from './UserOrgs';
-import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
-import { contextSrv } from 'app/core/core';
 
 interface OwnProps extends GrafanaRouteComponentProps<{ id: string }> {
-  navModel: NavModel;
   user?: UserDTO;
   orgs: UserOrg[];
   sessions: UserSession[];
@@ -102,13 +101,21 @@ export class UserAdminPage extends PureComponent<Props> {
   };
 
   render() {
-    const { navModel, user, orgs, sessions, ldapSyncInfo, isLoading } = this.props;
-    const isLDAPUser = user && user.isExternal && user.authLabels && user.authLabels.includes('LDAP');
+    const { user, orgs, sessions, ldapSyncInfo, isLoading } = this.props;
+    const isLDAPUser = user?.isExternal && user?.authLabels?.includes('LDAP');
     const canReadSessions = contextSrv.hasPermission(AccessControlAction.UsersAuthTokenList);
     const canReadLDAPStatus = contextSrv.hasPermission(AccessControlAction.LDAPStatusRead);
+    const authSource = user?.authLabels?.[0];
+    const lockMessage = authSource ? `Synced via ${authSource}` : '';
+
+    const pageNav: NavModelItem = {
+      text: user?.login ?? '',
+      icon: 'shield',
+      subTitle: 'Manage settings for an individual user.',
+    };
 
     return (
-      <Page navModel={navModel}>
+      <Page navId="global-users" pageNav={pageNav}>
         <Page.Contents isLoading={isLoading}>
           {user && (
             <>
@@ -120,16 +127,27 @@ export class UserAdminPage extends PureComponent<Props> {
                 onUserEnable={this.onUserEnable}
                 onPasswordChange={this.onPasswordChange}
               />
-              {isLDAPUser && config.licenseInfo.hasLicense && ldapSyncInfo && canReadLDAPStatus && (
-                <UserLdapSyncInfo ldapSyncInfo={ldapSyncInfo} user={user} onUserSync={this.onUserSync} />
-              )}
-              <UserPermissions isGrafanaAdmin={user.isGrafanaAdmin} onGrafanaAdminChange={this.onGrafanaAdminChange} />
+              {isLDAPUser &&
+                user?.isExternallySynced &&
+                featureEnabled('ldapsync') &&
+                ldapSyncInfo &&
+                canReadLDAPStatus && (
+                  <UserLdapSyncInfo ldapSyncInfo={ldapSyncInfo} user={user} onUserSync={this.onUserSync} />
+                )}
+              <UserPermissions
+                isGrafanaAdmin={user.isGrafanaAdmin}
+                isExternalUser={user?.isGrafanaAdminExternallySynced}
+                lockMessage={lockMessage}
+                onGrafanaAdminChange={this.onGrafanaAdminChange}
+              />
             </>
           )}
 
           {orgs && (
             <UserOrgs
+              user={user}
               orgs={orgs}
+              isExternalUser={user?.isExternallySynced}
               onOrgRemove={this.onOrgRemove}
               onOrgRoleChange={this.onOrgRoleChange}
               onOrgAdd={this.onOrgAdd}
@@ -150,7 +168,6 @@ export class UserAdminPage extends PureComponent<Props> {
 }
 
 const mapStateToProps = (state: StoreState) => ({
-  navModel: getNavModel(state.navIndex, 'global-users'),
   user: state.userAdmin.user,
   sessions: state.userAdmin.sessions,
   orgs: state.userAdmin.orgs,
@@ -177,4 +194,4 @@ const mapDispatchToProps = {
 
 const connector = connect(mapStateToProps, mapDispatchToProps);
 type Props = OwnProps & ConnectedProps<typeof connector>;
-export default hot(module)(connector(UserAdminPage));
+export default connector(UserAdminPage);

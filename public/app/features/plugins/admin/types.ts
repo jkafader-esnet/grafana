@@ -1,6 +1,38 @@
-import { GrafanaPlugin, PluginMeta } from '@grafana/data';
+import { EntityState } from '@reduxjs/toolkit';
+
+import {
+  PluginType,
+  PluginSignatureStatus,
+  PluginSignatureType,
+  PluginDependencies,
+  PluginErrorCode,
+  WithAccessControlMetadata,
+} from '@grafana/data';
+import { IconName } from '@grafana/ui';
+import { StoreState, PluginsState } from 'app/types';
+
 export type PluginTypeCode = 'app' | 'panel' | 'datasource';
-export interface CatalogPlugin {
+
+export enum PluginListDisplayMode {
+  Grid = 'grid',
+  List = 'list',
+}
+
+export enum PluginAdminRoutes {
+  Home = 'plugins-home',
+  Browse = 'plugins-browse',
+  Details = 'plugins-details',
+}
+
+export enum PluginIconName {
+  app = 'apps',
+  datasource = 'database',
+  panel = 'credit-card',
+  renderer = 'capture',
+  secretsmanager = 'key-skeleton-alt',
+}
+
+export interface CatalogPlugin extends WithAccessControlMetadata {
   description: string;
   downloads: number;
   hasUpdate: boolean;
@@ -10,23 +42,34 @@ export interface CatalogPlugin {
   isCore: boolean;
   isEnterprise: boolean;
   isInstalled: boolean;
+  isDisabled: boolean;
+  isDeprecated: boolean;
+  // `isPublished` is TRUE if the plugin is published to grafana.com
+  isPublished: boolean;
   name: string;
   orgName: string;
+  signature: PluginSignatureStatus;
+  signatureType?: PluginSignatureType;
+  signatureOrg?: string;
   popularity: number;
   publishedAt: string;
-  type: string;
+  type?: PluginType;
   updatedAt: string;
-  version: string;
+  installedVersion?: string;
+  details?: CatalogPluginDetails;
+  error?: PluginErrorCode;
+  angularDetected?: boolean;
 }
 
-export interface CatalogPluginDetails extends CatalogPlugin {
-  readme: string;
-  versions: Version[];
+export interface CatalogPluginDetails {
+  readme?: string;
+  versions?: Version[];
   links: Array<{
     name: string;
     url: string;
   }>;
   grafanaDependency?: string;
+  pluginDependencies?: PluginDependencies['plugins'];
 }
 
 export interface CatalogPluginInfo {
@@ -36,39 +79,16 @@ export interface CatalogPluginInfo {
   };
 }
 
-export interface Plugin {
-  name: string;
-  description: string;
-  slug: string;
-  orgName: string;
-  orgSlug: string;
-  signatureType: string;
-  version: string;
-  status: string;
-  popularity: number;
-  downloads: number;
-  updatedAt: string;
+export type RemotePlugin = {
   createdAt: string;
-  typeCode: string;
+  description: string;
+  downloads: number;
+  downloadSlug: string;
   featured: number;
-  readme: string;
+  id: number;
   internal: boolean;
-  versionSignatureType: string;
-  packages: {
-    [arch: string]: {
-      packageName: string;
-      downloadUrl: string;
-    };
-  };
-  links: Array<{
-    rel: string;
-    href: string;
-  }>;
   json?: {
-    dependencies: {
-      grafanaDependency: string;
-      grafanaVersion: string;
-    };
+    dependencies: PluginDependencies;
     info: {
       links: Array<{
         name: string;
@@ -76,50 +96,103 @@ export interface Plugin {
       }>;
     };
   };
+  links: Array<{ rel: string; href: string }>;
+  name: string;
+  orgId: number;
+  orgName: string;
+  orgSlug: string;
+  orgUrl: string;
+  packages: {
+    [arch: string]: {
+      packageName: string;
+      downloadUrl: string;
+    };
+  };
+  popularity: number;
+  readme?: string;
+  signatureType: PluginSignatureType | '';
+  slug: string;
+  status: RemotePluginStatus;
+  typeCode: PluginType;
+  typeId: number;
+  typeName: string;
+  updatedAt: string;
+  url: string;
+  userId: number;
+  verified: boolean;
+  version: string;
+  versionSignatureType: PluginSignatureType | '';
+  versionSignedByOrg: string;
+  versionSignedByOrgName: string;
+  versionStatus: string;
+  angularDetected?: boolean;
+};
+
+// The available status codes on GCOM are available here:
+// https://github.com/grafana/grafana-com/blob/main/packages/grafana-com-plugins-api/src/plugins/plugin.model.js#L74
+export enum RemotePluginStatus {
+  Deleted = 'deleted',
+  Active = 'active',
+  Pending = 'pending',
+  Deprecated = 'deprecated',
+  Enterprise = 'enterprise',
 }
 
-export type LocalPlugin = {
+export type LocalPlugin = WithAccessControlMetadata & {
   category: string;
   defaultNavUrl: string;
+  dev?: boolean;
   enabled: boolean;
   hasUpdate: boolean;
   id: string;
   info: {
-    author: {
-      name: string;
-      url: string;
-    };
-    build: {};
+    author: Rel;
     description: string;
-    links: Array<{
-      name: string;
-      url: string;
-    }>;
+    links?: Rel[];
     logos: {
-      large: string;
       small: string;
+      large: string;
     };
-    updated: string;
+    build: Build;
+    screenshots?: Array<{
+      path: string;
+      name: string;
+    }> | null;
     version: string;
+    updated: string;
   };
-  latestVersion: string;
   name: string;
   pinned: boolean;
-  signature: string;
+  signature: PluginSignatureStatus;
   signatureOrg: string;
-  signatureType: string;
+  signatureType: PluginSignatureType;
   state: string;
-  type: string;
-  dev: boolean | undefined;
+  type: PluginType;
+  dependencies: PluginDependencies;
+  angularDetected: boolean;
 };
+
+interface Rel {
+  name: string;
+  url: string;
+}
+
+export interface Build {
+  time?: number;
+  repo?: string;
+  branch?: string;
+  hash?: string;
+}
 
 export interface Version {
   version: string;
   createdAt: string;
+  isCompatible: boolean;
+  grafanaDependency: string | null;
 }
 
 export interface PluginDetails {
-  remote?: Plugin;
+  remote?: RemotePlugin;
   remoteVersions?: Version[];
   local?: LocalPlugin;
 }
@@ -134,63 +207,88 @@ export interface Org {
   avatarUrl: string;
 }
 
-export interface PluginDetailsState {
-  hasInstalledPanel: boolean;
-  hasUpdate: boolean;
-  isAdmin: boolean;
-  isInstalled: boolean;
-  isInflight: boolean;
-  loading: boolean;
-  error?: Error;
-  plugin?: CatalogPluginDetails;
-  pluginConfig?: GrafanaPlugin<PluginMeta<{}>>;
-  tabs: Array<{ label: string }>;
-  activeTab: number;
-}
-
-export enum ActionTypes {
-  LOADING = 'LOADING',
-  INFLIGHT = 'INFLIGHT',
-  INSTALLED = 'INSTALLED',
-  UNINSTALLED = 'UNINSTALLED',
-  UPDATED = 'UPDATED',
-  ERROR = 'ERROR',
-  FETCHED_PLUGIN = 'FETCHED_PLUGIN',
-  FETCHED_PLUGIN_CONFIG = 'FETCHED_PLUGIN_CONFIG',
-  UPDATE_TABS = 'UPDATE_TABS',
-  SET_ACTIVE_TAB = 'SET_ACTIVE_TAB',
-}
-
-export type PluginDetailsActions =
-  | { type: ActionTypes.FETCHED_PLUGIN; payload: CatalogPluginDetails }
-  | { type: ActionTypes.ERROR; payload: Error }
-  | { type: ActionTypes.FETCHED_PLUGIN_CONFIG; payload?: GrafanaPlugin<PluginMeta<{}>> }
-  | {
-      type: ActionTypes.UPDATE_TABS;
-      payload: Array<{ label: string }>;
-    }
-  | { type: ActionTypes.INSTALLED; payload: boolean }
-  | { type: ActionTypes.SET_ACTIVE_TAB; payload: number }
-  | {
-      type: ActionTypes.LOADING | ActionTypes.INFLIGHT | ActionTypes.UNINSTALLED | ActionTypes.UPDATED;
-    };
-
 export type CatalogPluginsState = {
   loading: boolean;
   error?: Error;
   plugins: CatalogPlugin[];
 };
 
-export type FilteredPluginsState = {
-  isLoading: boolean;
+export enum PluginStatus {
+  INSTALL = 'INSTALL',
+  UNINSTALL = 'UNINSTALL',
+  UPDATE = 'UPDATE',
+  REINSTALL = 'REINSTALL',
+}
+
+export enum PluginTabLabels {
+  OVERVIEW = 'Overview',
+  VERSIONS = 'Version history',
+  CONFIG = 'Config',
+  DASHBOARDS = 'Dashboards',
+  USAGE = 'Usage',
+}
+
+export enum PluginTabIds {
+  OVERVIEW = 'overview',
+  VERSIONS = 'version-history',
+  CONFIG = 'config',
+  DASHBOARDS = 'dashboards',
+  USAGE = 'usage',
+}
+
+export enum RequestStatus {
+  Pending = 'Pending',
+  Fulfilled = 'Fulfilled',
+  Rejected = 'Rejected',
+}
+export type RemotePluginResponse = {
+  plugins: RemotePlugin[];
   error?: Error;
-  plugins: CatalogPlugin[];
 };
 
-export type PluginsByFilterType = {
-  searchBy: string;
-  filterBy: string;
-  filterByType: string;
+export type RequestInfo = {
+  status: RequestStatus;
+  // The whole error object
+  error?: any;
+  // An optional error message
+  errorMessage?: string;
 };
 
-export type PluginFilter = (plugin: CatalogPlugin, query: string) => boolean;
+export type PluginDetailsTab = {
+  label: PluginTabLabels | string;
+  icon?: IconName;
+  id: PluginTabIds | string;
+  href?: string;
+};
+
+// TODO<remove `PluginsState &` when the "plugin_admin_enabled" feature flag is removed>
+export type ReducerState = PluginsState & {
+  items: EntityState<CatalogPlugin>;
+  requests: Record<string, RequestInfo>;
+  settings: {
+    displayMode: PluginListDisplayMode;
+  };
+};
+
+// TODO<remove when the "plugin_admin_enabled" feature flag is removed>
+export type PluginCatalogStoreState = StoreState & { plugins: ReducerState };
+
+// The data that we receive when fetching "/api/gnet/plugins/<plugin>/versions"
+export type PluginVersion = {
+  id: number;
+  pluginId: number;
+  pluginSlug: string;
+  version: string;
+  url: string;
+  commit: string;
+  description: string;
+  createdAt: string;
+  updatedAt?: string;
+  downloads: number;
+  verified: boolean;
+  status: string;
+  downloadSlug: string;
+  links: Array<{ rel: string; href: string }>;
+  isCompatible: boolean;
+  grafanaDependency: string | null;
+};

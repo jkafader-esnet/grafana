@@ -2,6 +2,8 @@
  * @preserve jquery-param (c) 2015 KNOWLEDGECODE | MIT
  */
 
+import { isDateTime } from '../datetime';
+import { URLRange, RawTimeRange } from '../types';
 import { ExploreUrlState } from '../types/explore';
 
 /**
@@ -32,7 +34,10 @@ function encodeURIComponentAsAngularJS(val: string, pctEncodeSpaces?: boolean) {
     .replace(/%24/g, '$')
     .replace(/%2C/gi, ',')
     .replace(/%3B/gi, ';')
-    .replace(/%20/g, pctEncodeSpaces ? '%20' : '+');
+    .replace(/%20/g, pctEncodeSpaces ? '%20' : '+')
+    .replace(/[!'()*]/g, function (c) {
+      return '%' + c.charCodeAt(0).toString(16).toUpperCase();
+    });
 }
 
 function toUrlParams(a: any) {
@@ -48,7 +53,8 @@ function toUrlParams(a: any) {
     if (typeof v !== 'boolean') {
       s[s.length] = encodeURIComponentAsAngularJS(k, true) + '=' + encodeURIComponentAsAngularJS(v, true);
     } else {
-      s[s.length] = encodeURIComponentAsAngularJS(k, true);
+      const valueQueryPart = v ? '' : '=' + encodeURIComponentAsAngularJS('false', true);
+      s[s.length] = encodeURIComponentAsAngularJS(k, true) + valueQueryPart;
     }
   };
 
@@ -135,7 +141,7 @@ function getUrlSearchParams(): UrlQueryMap {
  * @returns {Object.<string,boolean|Array>}
  */
 export function parseKeyValue(keyValue: string) {
-  var obj: any = {};
+  const obj: any = {};
   const parts = (keyValue || '').split('&');
 
   for (let keyValue of parts) {
@@ -194,9 +200,39 @@ export const urlUtil = {
   parseKeyValue,
 };
 
-export function serializeStateToUrlParam(urlState: ExploreUrlState, compact?: boolean): string {
-  if (compact) {
-    return JSON.stringify([urlState.range.from, urlState.range.to, urlState.datasource, ...urlState.queries]);
+/**
+ * Create an string that is used in URL to represent the Explore state. This is basically just a stringified json
+ * that is used as a state of a single Explore pane so it does not represent full Explore URL so some properties
+ * may be omitted (they will be filled in with default values).
+ *
+ * @param urlState
+ * @param compact this parameter is deprecated and will be removed in a future release.
+ */
+export function serializeStateToUrlParam(urlState: Partial<ExploreUrlState>, compact?: boolean): string {
+  if (compact !== undefined) {
+    console.warn('`compact` parameter is deprecated and will be removed in a future release');
   }
   return JSON.stringify(urlState);
 }
+
+/**
+ * Converts RawTimeRange to a string that is stored in the URL
+ * - relative - stays as it is (e.g. "now")
+ * - absolute - converted to ms
+ */
+export const toURLRange = (range: RawTimeRange): URLRange => {
+  let from = range.from;
+  if (isDateTime(from)) {
+    from = from.valueOf().toString();
+  }
+
+  let to = range.to;
+  if (isDateTime(to)) {
+    to = to.valueOf().toString();
+  }
+
+  return {
+    from,
+    to,
+  };
+};

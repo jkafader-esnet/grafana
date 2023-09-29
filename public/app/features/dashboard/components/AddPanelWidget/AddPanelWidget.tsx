@@ -1,26 +1,27 @@
-import React, { useMemo, useState } from 'react';
-import { connect, MapDispatchToProps } from 'react-redux';
 import { css, cx, keyframes } from '@emotion/css';
 import { chain, cloneDeep, defaults, find, sortBy } from 'lodash';
+import React, { useMemo, useState } from 'react';
+import { connect, MapDispatchToProps } from 'react-redux';
 import tinycolor from 'tinycolor2';
-import { locationService, reportInteraction } from '@grafana/runtime';
-import { Icon, IconButton, styleMixins, useStyles } from '@grafana/ui';
-import { selectors } from '@grafana/e2e-selectors';
-import { GrafanaTheme } from '@grafana/data';
 
+import { GrafanaTheme2 } from '@grafana/data';
+import { selectors } from '@grafana/e2e-selectors';
+import { locationService, reportInteraction } from '@grafana/runtime';
+import { Icon, IconButton, useStyles2 } from '@grafana/ui';
+import { CardButton } from 'app/core/components/CardButton';
 import config from 'app/core/config';
+import { LS_PANEL_COPY_KEY } from 'app/core/constants';
 import store from 'app/core/store';
 import { addPanel } from 'app/features/dashboard/state/reducers';
-import { DashboardModel, PanelModel } from '../../state';
-import { LS_PANEL_COPY_KEY } from 'app/core/constants';
-import { LibraryElementDTO } from '../../../library-panels/types';
-import { toPanelModelLibraryPanel } from '../../../library-panels/utils';
+
 import {
   LibraryPanelsSearch,
   LibraryPanelsSearchVariant,
 } from '../../../library-panels/components/LibraryPanelsSearch/LibraryPanelsSearch';
+import { LibraryElementDTO } from '../../../library-panels/types';
+import { DashboardModel, PanelModel } from '../../state';
 
-export type PanelPluginInfo = { id: any; defaults: { gridPos: { w: any; h: any }; title: any } };
+export type PanelPluginInfo = { id: number; defaults: { gridPos: { w: number; h: number }; title: string } };
 
 export interface OwnProps {
   panel: PanelModel;
@@ -56,7 +57,7 @@ const getCopiedPanelPlugins = () => {
   return sortBy(copiedPanels, 'sort');
 };
 
-export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard }) => {
+export const AddPanelWidgetUnconnected = ({ panel, dashboard }: Props) => {
   const [addPanelView, setAddPanelView] = useState(false);
 
   const onCancelAddPanel = (evt: React.MouseEvent<HTMLButtonElement>) => {
@@ -74,7 +75,9 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
     const newPanel: Partial<PanelModel> = {
       type: 'timeseries',
       title: 'Panel Title',
+      datasource: panel.datasource,
       gridPos: { x: gridPos.x, y: gridPos.y, w: gridPos.w, h: gridPos.h },
+      isNew: true,
     };
 
     dashboard.addPanel(newPanel);
@@ -86,7 +89,7 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
   const onPasteCopiedPanel = (panelPluginInfo: PanelPluginInfo) => {
     const { gridPos } = panel;
 
-    const newPanel: any = {
+    const newPanel = {
       type: panelPluginInfo.id,
       title: 'Panel Title',
       gridPos: {
@@ -111,10 +114,10 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
   const onAddLibraryPanel = (panelInfo: LibraryElementDTO) => {
     const { gridPos } = panel;
 
-    const newPanel: PanelModel = {
+    const newPanel = {
       ...panelInfo.model,
       gridPos,
-      libraryPanel: toPanelModelLibraryPanel(panelInfo),
+      libraryPanel: panelInfo,
     };
 
     dashboard.addPanel(newPanel);
@@ -122,7 +125,7 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
   };
 
   const onCreateNewRow = () => {
-    const newRow: any = {
+    const newRow = {
       type: 'row',
       title: 'Row title',
       gridPos: { x: 0, y: 0 },
@@ -132,7 +135,7 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
     dashboard.removePanel(panel);
   };
 
-  const styles = useStyles(getStyles);
+  const styles = useStyles2(getStyles);
   const copiedPanelPlugins = useMemo(() => getCopiedPanelPlugins(), []);
 
   return (
@@ -145,53 +148,48 @@ export const AddPanelWidgetUnconnected: React.FC<Props> = ({ panel, dashboard })
           <LibraryPanelsSearch onClick={onAddLibraryPanel} variant={LibraryPanelsSearchVariant.Tight} showPanelFilter />
         ) : (
           <div className={styles.actionsWrapper}>
-            <div className={cx(styles.actionsRow, styles.columnGap)}>
-              <div
-                onClick={() => {
-                  reportInteraction('Create new panel');
-                  onCreateNewPanel();
-                }}
-                aria-label={selectors.pages.AddDashboard.addNewPanel}
-              >
-                <Icon name="file-blank" size="xl" />
-                Add an empty panel
-              </div>
-              <div
-                className={styles.rowGap}
-                onClick={() => {
-                  reportInteraction('Create new row');
-                  onCreateNewRow();
-                }}
-                aria-label={selectors.pages.AddDashboard.addNewRow}
-              >
-                <Icon name="wrap-text" size="xl" />
-                Add a new row
-              </div>
-            </div>
-            <div className={styles.actionsRow}>
-              <div
-                onClick={() => {
-                  reportInteraction('Add a panel from the panel library');
-                  setAddPanelView(true);
-                }}
+            <CardButton
+              icon="file-blank"
+              aria-label={selectors.pages.AddDashboard.addNewPanel}
+              onClick={() => {
+                reportInteraction('Create new panel');
+                onCreateNewPanel();
+              }}
+            >
+              Add a new panel
+            </CardButton>
+            <CardButton
+              icon="wrap-text"
+              aria-label={selectors.pages.AddDashboard.addNewRow}
+              onClick={() => {
+                reportInteraction('Create new row');
+                onCreateNewRow();
+              }}
+            >
+              Add a new row
+            </CardButton>
+            <CardButton
+              icon="book-open"
+              aria-label={selectors.pages.AddDashboard.addNewPanelLibrary}
+              onClick={() => {
+                reportInteraction('Add a panel from the panel library');
+                setAddPanelView(true);
+              }}
+            >
+              Add a panel from the panel library
+            </CardButton>
+            {copiedPanelPlugins.length === 1 && (
+              <CardButton
+                icon="clipboard-alt"
                 aria-label={selectors.pages.AddDashboard.addNewPanelLibrary}
+                onClick={() => {
+                  reportInteraction('Paste panel from clipboard');
+                  onPasteCopiedPanel(copiedPanelPlugins[0]);
+                }}
               >
-                <Icon name="book-open" size="xl" />
-                Add a panel from the panel library
-              </div>
-              {copiedPanelPlugins.length === 1 && (
-                <div
-                  className={styles.rowGap}
-                  onClick={() => {
-                    reportInteraction('Paste panel from clipboard');
-                    onPasteCopiedPanel(copiedPanelPlugins[0]);
-                  }}
-                >
-                  <Icon name="clipboard-alt" size="xl" />
-                  Paste panel from clipboard
-                </div>
-              )}
-            </div>
+                Paste panel from clipboard
+              </CardButton>
+            )}
           </div>
         )}
       </div>
@@ -210,86 +208,64 @@ interface AddPanelWidgetHandleProps {
   styles: AddPanelStyles;
 }
 
-const AddPanelWidgetHandle: React.FC<AddPanelWidgetHandleProps> = ({ children, onBack, onCancel, styles }) => {
+const AddPanelWidgetHandle = ({ children, onBack, onCancel, styles }: AddPanelWidgetHandleProps) => {
   return (
     <div className={cx(styles.headerRow, 'grid-drag-handle')}>
       {onBack && (
         <div className={styles.backButton}>
-          <IconButton name="arrow-left" onClick={onBack} surface="header" size="xl" />
+          <IconButton name="arrow-left" onClick={onBack} size="xl" tooltip="Go back" />
         </div>
       )}
       {!onBack && (
         <div className={styles.backButton}>
-          <Icon name="panel-add" size="md" />
+          <Icon name="panel-add" size="xl" />
         </div>
       )}
       {children && <span>{children}</span>}
       <div className="flex-grow-1" />
-      <IconButton name="times" onClick={onCancel} surface="header" />
+      <IconButton aria-label="Close 'Add Panel' widget" name="times" onClick={onCancel} tooltip="Close widget" />
     </div>
   );
 };
 
-const getStyles = (theme: GrafanaTheme) => {
+const getStyles = (theme: GrafanaTheme2) => {
   const pulsate = keyframes`
-    0% {box-shadow: 0 0 0 2px ${theme.colors.bodyBg}, 0 0 0px 4px ${theme.colors.formFocusOutline};}
-    50% {box-shadow: 0 0 0 2px ${theme.colors.bodyBg}, 0 0 0px 4px ${tinycolor(theme.colors.formFocusOutline)
-    .darken(20)
-    .toHexString()};}
-    100% {box-shadow: 0 0 0 2px ${theme.colors.bodyBg}, 0 0 0px 4px  ${theme.colors.formFocusOutline};}
+    0% {box-shadow: 0 0 0 2px ${theme.colors.background.canvas}, 0 0 0px 4px ${theme.colors.primary.main};}
+    50% {box-shadow: 0 0 0 2px ${theme.components.dashboard.background}, 0 0 0px 4px ${tinycolor(
+      theme.colors.primary.main
+    )
+      .darken(20)
+      .toHexString()};}
+    100% {box-shadow: 0 0 0 2px ${theme.components.dashboard.background}, 0 0 0px 4px  ${theme.colors.primary.main};}
   `;
 
   return {
     // wrapper is used to make sure box-shadow animation isn't cut off in dashboard page
     wrapper: css`
       height: 100%;
-      padding-top: ${theme.spacing.xs};
+      padding-top: ${theme.spacing(0.5)};
     `,
     callToAction: css`
       overflow: hidden;
       outline: 2px dotted transparent;
       outline-offset: 2px;
-      box-shadow: 0 0 0 2px black, 0 0 0px 4px #1f60c4;
+      box-shadow:
+        0 0 0 2px black,
+        0 0 0px 4px #1f60c4;
       animation: ${pulsate} 2s ease infinite;
     `,
-    rowGap: css`
-      margin-left: ${theme.spacing.sm};
-    `,
-    columnGap: css`
-      margin-bottom: ${theme.spacing.sm};
-    `,
-    actionsRow: css`
-      display: flex;
-      flex-direction: row;
-      height: 100%;
-
-      > div {
-        justify-self: center;
-        cursor: pointer;
-        background: ${theme.colors.bg2};
-        border-radius: ${theme.border.radius.sm};
-        color: ${theme.colors.text};
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
-
-        &:hover {
-          background: ${styleMixins.hoverColor(theme.colors.bg2, theme)};
-        }
-
-        &:hover > #book-icon {
-          background: linear-gradient(#f05a28 30%, #fbca0a 99%);
-        }
-      }
-    `,
     actionsWrapper: css`
-      display: flex;
-      flex-direction: column;
-      padding: 0 ${theme.spacing.sm} ${theme.spacing.sm} ${theme.spacing.sm};
       height: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      column-gap: ${theme.spacing(1)};
+      row-gap: ${theme.spacing(1)};
+      padding: ${theme.spacing(0, 1, 1, 1)};
+
+      // This is to make the last action full width (if by itself)
+      & > div:nth-child(2n-1):nth-last-of-type(1) {
+        grid-column: span 2;
+      }
     `,
     headerRow: css`
       display: flex;
@@ -297,22 +273,22 @@ const getStyles = (theme: GrafanaTheme) => {
       height: 38px;
       flex-shrink: 0;
       width: 100%;
-      font-size: ${theme.typography.size.md};
-      font-weight: ${theme.typography.weight.semibold};
-      padding-left: ${theme.spacing.sm};
+      font-size: ${theme.typography.fontSize};
+      font-weight: ${theme.typography.fontWeightMedium};
+      padding-left: ${theme.spacing(1)};
       transition: background-color 0.1s ease-in-out;
       cursor: move;
 
       &:hover {
-        background: ${theme.colors.bg2};
+        background: ${theme.colors.background.secondary};
       }
     `,
     backButton: css`
       display: flex;
       align-items: center;
       cursor: pointer;
-      padding-left: ${theme.spacing.xs};
-      width: ${theme.spacing.xl};
+      padding-left: ${theme.spacing(0.5)};
+      width: ${theme.spacing(4)};
     `,
     noMargin: css`
       margin: 0;

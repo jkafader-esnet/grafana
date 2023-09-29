@@ -1,65 +1,28 @@
 import React from 'react';
-import { useStyles2 } from '@grafana/ui';
-import { css } from '@emotion/css';
-import { Card } from '../components/Card';
-import { Grid } from '../components/Grid';
+import { useLocation } from 'react-router-dom';
 
-import { CatalogPlugin } from '../types';
-import { GrafanaTheme2 } from '@grafana/data';
-import { PluginLogo } from './PluginLogo';
+import { config } from '@grafana/runtime';
+import { Grid } from '@grafana/ui/src/unstable';
+
+import { CatalogPlugin, PluginListDisplayMode } from '../types';
+
+import { PluginListItem } from './PluginListItem';
 
 interface Props {
   plugins: CatalogPlugin[];
+  displayMode: PluginListDisplayMode;
 }
 
-export const PluginList = ({ plugins }: Props) => {
-  const styles = useStyles2(getStyles);
+export const PluginList = ({ plugins, displayMode }: Props) => {
+  const isList = displayMode === PluginListDisplayMode.List;
+  const { pathname } = useLocation();
+  const pathName = config.appSubUrl + (pathname.endsWith('/') ? pathname.slice(0, -1) : pathname);
 
   return (
-    <Grid>
-      {plugins.map((plugin) => {
-        const { name, id, orgName } = plugin;
-
-        return (
-          <Card
-            key={`${id}`}
-            href={`/plugins/${id}`}
-            image={
-              <PluginLogo
-                src={plugin.info.logos.small}
-                className={css`
-                  max-height: 64px;
-                `}
-              />
-            }
-            text={
-              <>
-                <div className={styles.name}>{name}</div>
-                <div className={styles.orgName}>{orgName}</div>
-              </>
-            }
-          />
-        );
-      })}
+    <Grid gap={3} columns={isList ? 1 : undefined} minColumnWidth={isList ? undefined : 34} data-testid="plugin-list">
+      {plugins.map((plugin) => (
+        <PluginListItem key={plugin.id} plugin={plugin} pathName={pathName} displayMode={displayMode} />
+      ))}
     </Grid>
   );
 };
-
-const getStyles = (theme: GrafanaTheme2) => ({
-  name: css`
-    font-size: ${theme.typography.h4.fontSize};
-    color: ${theme.colors.text};
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: center;
-  `,
-  orgName: css`
-    font-size: ${theme.typography.body.fontSize};
-    color: ${theme.colors.text.secondary};
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: center;
-  `,
-});

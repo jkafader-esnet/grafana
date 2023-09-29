@@ -2,8 +2,9 @@ package opentsdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -11,28 +12,27 @@ import (
 	"strings"
 	"time"
 
-	"encoding/json"
-
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+
 	"github.com/grafana/grafana/pkg/components/simplejson"
 	"github.com/grafana/grafana/pkg/infra/httpclient"
 	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/plugins/backendplugin"
-	"github.com/grafana/grafana/pkg/plugins/backendplugin/coreplugin"
-	"github.com/grafana/grafana/pkg/registry"
 	"github.com/grafana/grafana/pkg/setting"
-	"golang.org/x/net/context/ctxhttp"
 )
 
-type Service struct {
-	HTTPClientProvider   httpclient.Provider   `inject:""`
-	Cfg                  *setting.Cfg          `inject:""`
-	BackendPluginManager backendplugin.Manager `inject:""`
+var logger = log.New("tsdb.opentsdb")
 
+type Service struct {
 	im instancemgmt.InstanceManager
+}
+
+func ProvideService(httpClientProvider httpclient.Provider) *Service {
+	return &Service{
+		im: datasource.NewInstanceManager(newInstanceSettings(httpClientProvider)),
+	}
 }
 
 type datasourceInfo struct {
@@ -42,26 +42,8 @@ type datasourceInfo struct {
 
 type DsAccess string
 
-func init() {
-	registry.Register(&registry.Descriptor{Instance: &Service{}})
-}
-
-func (s *Service) Init() error {
-	s.im = datasource.NewInstanceManager(newInstanceSettings(s.HTTPClientProvider))
-
-	factory := coreplugin.New(backend.ServeOpts{
-		QueryDataHandler: s,
-	})
-
-	if err := s.BackendPluginManager.Register("opentsdb", factory); err != nil {
-		plog.Error("Failed to register plugin", "error", err)
-	}
-
-	return nil
-}
-
 func newInstanceSettings(httpClientProvider httpclient.Provider) datasource.InstanceFactoryFunc {
-	return func(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	return func(_ context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 		opts, err := settings.HTTPClientOptions()
 		if err != nil {
 			return nil, err
@@ -81,12 +63,10 @@ func newInstanceSettings(httpClientProvider httpclient.Provider) datasource.Inst
 	}
 }
 
-var (
-	plog = log.New("tsdb.opentsdb")
-)
-
 func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	var tsdbQuery OpenTsdbQuery
+
+	logger := logger.FromContext(ctx)
 
 	q := req.Queries[0]
 
@@ -100,25 +80,32 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 
 	// TODO: Don't use global variable
 	if setting.Env == setting.Dev {
-		plog.Debug("OpenTsdb request", "params", tsdbQuery)
+		logger.Debug("OpenTsdb request", "params", tsdbQuery)
 	}
 
-	dsInfo, err := s.getDSInfo(req.PluginContext)
+	dsInfo, err := s.getDSInfo(ctx, req.PluginContext)
 	if err != nil {
 		return nil, err
 	}
 
-	request, err := s.createRequest(dsInfo, tsdbQuery)
+	request, err := s.createRequest(ctx, logger, dsInfo, tsdbQuery)
 	if err != nil {
 		return &backend.QueryDataResponse{}, err
 	}
 
-	res, err := ctxhttp.Do(ctx, dsInfo.HTTPClient, request)
+	res, err := dsInfo.HTTPClient.Do(request)
 	if err != nil {
 		return &backend.QueryDataResponse{}, err
 	}
 
-	result, err := s.parseResponse(res)
+	defer func() {
+		err := res.Body.Close()
+		if err != nil {
+			logger.Warn("failed to close response body", "error", err)
+		}
+	}()
+
+	result, err := s.parseResponse(logger, res)
 	if err != nil {
 		return &backend.QueryDataResponse{}, err
 	}
@@ -126,7 +113,7 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 	return result, nil
 }
 
-func (s *Service) createRequest(dsInfo *datasourceInfo, data OpenTsdbQuery) (*http.Request, error) {
+func (s *Service) createRequest(ctx context.Context, logger log.Logger, dsInfo *datasourceInfo, data OpenTsdbQuery) (*http.Request, error) {
 	u, err := url.Parse(dsInfo.URL)
 	if err != nil {
 		return nil, err
@@ -135,13 +122,13 @@ func (s *Service) createRequest(dsInfo *datasourceInfo, data OpenTsdbQuery) (*ht
 
 	postData, err := json.Marshal(data)
 	if err != nil {
-		plog.Info("Failed marshaling data", "error", err)
+		logger.Info("Failed marshaling data", "error", err)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, u.String(), strings.NewReader(string(postData)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(string(postData)))
 	if err != nil {
-		plog.Info("Failed to create request", "error", err)
+		logger.Info("Failed to create request", "error", err)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -149,28 +136,28 @@ func (s *Service) createRequest(dsInfo *datasourceInfo, data OpenTsdbQuery) (*ht
 	return req, nil
 }
 
-func (s *Service) parseResponse(res *http.Response) (*backend.QueryDataResponse, error) {
+func (s *Service) parseResponse(logger log.Logger, res *http.Response) (*backend.QueryDataResponse, error) {
 	resp := backend.NewQueryDataResponse()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err := res.Body.Close(); err != nil {
-			plog.Warn("Failed to close response body", "err", err)
+			logger.Warn("Failed to close response body", "err", err)
 		}
 	}()
 
 	if res.StatusCode/100 != 2 {
-		plog.Info("Request failed", "status", res.Status, "body", string(body))
+		logger.Info("Request failed", "status", res.Status, "body", string(body))
 		return nil, fmt.Errorf("request failed, status: %s", res.Status)
 	}
 
 	var responseData []OpenTsdbResponse
 	err = json.Unmarshal(body, &responseData)
 	if err != nil {
-		plog.Info("Failed to unmarshal opentsdb response", "error", err, "status", res.Status, "body", string(body))
+		logger.Info("Failed to unmarshal opentsdb response", "error", err, "status", res.Status, "body", string(body))
 		return nil, err
 	}
 
@@ -179,11 +166,12 @@ func (s *Service) parseResponse(res *http.Response) (*backend.QueryDataResponse,
 		timeVector := make([]time.Time, 0, len(val.DataPoints))
 		values := make([]float64, 0, len(val.DataPoints))
 		name := val.Metric
+		tags := val.Tags
 
 		for timeString, value := range val.DataPoints {
 			timestamp, err := strconv.ParseInt(timeString, 10, 64)
 			if err != nil {
-				plog.Info("Failed to unmarshal opentsdb timestamp", "timestamp", timeString)
+				logger.Info("Failed to unmarshal opentsdb timestamp", "timestamp", timeString)
 				return nil, err
 			}
 			timeVector = append(timeVector, time.Unix(timestamp, 0).UTC())
@@ -191,7 +179,7 @@ func (s *Service) parseResponse(res *http.Response) (*backend.QueryDataResponse,
 		}
 		frames = append(frames, data.NewFrame(name,
 			data.NewField("time", nil, timeVector),
-			data.NewField("value", nil, values)))
+			data.NewField("value", tags, values)))
 	}
 	result := resp.Responses["A"]
 	result.Frames = frames
@@ -199,8 +187,8 @@ func (s *Service) parseResponse(res *http.Response) (*backend.QueryDataResponse,
 	return resp, nil
 }
 
-func (s *Service) buildMetric(query backend.DataQuery) map[string]interface{} {
-	metric := make(map[string]interface{})
+func (s *Service) buildMetric(query backend.DataQuery) map[string]any {
+	metric := make(map[string]any)
 
 	model, err := simplejson.NewJson(query.JSON)
 	if err != nil {
@@ -229,7 +217,7 @@ func (s *Service) buildMetric(query backend.DataQuery) map[string]interface{} {
 	// Setting rate options
 	if model.Get("shouldComputeRate").MustBool() {
 		metric["rate"] = true
-		rateOptions := make(map[string]interface{})
+		rateOptions := make(map[string]any)
 		rateOptions["counter"] = model.Get("isCounter").MustBool()
 
 		counterMax, counterMaxCheck := model.CheckGet("counterMax")
@@ -264,8 +252,8 @@ func (s *Service) buildMetric(query backend.DataQuery) map[string]interface{} {
 	return metric
 }
 
-func (s *Service) getDSInfo(pluginCtx backend.PluginContext) (*datasourceInfo, error) {
-	i, err := s.im.Get(pluginCtx)
+func (s *Service) getDSInfo(ctx context.Context, pluginCtx backend.PluginContext) (*datasourceInfo, error) {
+	i, err := s.im.Get(ctx, pluginCtx)
 	if err != nil {
 		return nil, err
 	}

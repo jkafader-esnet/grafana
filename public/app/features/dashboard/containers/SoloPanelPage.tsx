@@ -1,12 +1,14 @@
 import React, { Component } from 'react';
-import { hot } from 'react-hot-loader';
 import { connect, ConnectedProps } from 'react-redux';
 import AutoSizer from 'react-virtualized-auto-sizer';
+
+import { GrafanaContext, GrafanaContextType } from 'app/core/context/GrafanaContext';
+import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
+import { DashboardModel, PanelModel } from 'app/features/dashboard/state';
+import { StoreState } from 'app/types';
+
 import { DashboardPanel } from '../dashgrid/DashboardPanel';
 import { initDashboard } from '../state/initDashboard';
-import { StoreState } from 'app/types';
-import { PanelModel } from 'app/features/dashboard/state';
-import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
 
 export interface DashboardPageRouteParams {
   uid?: string;
@@ -24,7 +26,7 @@ const mapDispatchToProps = {
 
 const connector = connect(mapStateToProps, mapDispatchToProps);
 
-export type Props = GrafanaRouteComponentProps<DashboardPageRouteParams, { panelId: string }> &
+export type Props = GrafanaRouteComponentProps<DashboardPageRouteParams, { panelId: string; timezone?: string }> &
   ConnectedProps<typeof connector>;
 
 export interface State {
@@ -33,6 +35,9 @@ export interface State {
 }
 
 export class SoloPanelPage extends Component<Props, State> {
+  declare context: GrafanaContextType;
+  static contextType = GrafanaContext;
+
   state: State = {
     panel: null,
     notFound: false,
@@ -47,6 +52,7 @@ export class SoloPanelPage extends Component<Props, State> {
       urlType: match.params.type,
       routeName: route.routeName,
       fixUrl: false,
+      keybindingSrv: this.context.keybindings,
     });
   }
 
@@ -75,40 +81,58 @@ export class SoloPanelPage extends Component<Props, State> {
   }
 
   render() {
-    const { dashboard } = this.props;
-    const { notFound, panel } = this.state;
-
-    if (notFound) {
-      return <div className="alert alert-error">Panel with id {this.getPanelId()} not found</div>;
-    }
-
-    if (!panel || !dashboard) {
-      return <div>Loading & initializing dashboard</div>;
-    }
-
     return (
-      <div className="panel-solo">
-        <AutoSizer>
-          {({ width, height }) => {
-            if (width === 0) {
-              return null;
-            }
-            return (
-              <DashboardPanel
-                width={width}
-                height={height}
-                dashboard={dashboard}
-                panel={panel}
-                isEditing={false}
-                isViewing={false}
-                isInView={true}
-              />
-            );
-          }}
-        </AutoSizer>
-      </div>
+      <SoloPanel
+        dashboard={this.props.dashboard}
+        notFound={this.state.notFound}
+        panel={this.state.panel}
+        panelId={this.getPanelId()}
+        timezone={this.props.queryParams.timezone}
+      />
     );
   }
 }
 
-export default hot(module)(connector(SoloPanelPage));
+export interface SoloPanelProps extends State {
+  dashboard: DashboardModel | null;
+  panelId: number;
+  timezone?: string;
+}
+
+export const SoloPanel = ({ dashboard, notFound, panel, panelId, timezone }: SoloPanelProps) => {
+  if (notFound) {
+    return <div className="alert alert-error">Panel with id {panelId} not found</div>;
+  }
+
+  if (!panel || !dashboard) {
+    return <div>Loading & initializing dashboard</div>;
+  }
+
+  return (
+    <div className="panel-solo">
+      <AutoSizer>
+        {({ width, height }) => {
+          if (width === 0) {
+            return null;
+          }
+          return (
+            <DashboardPanel
+              stateKey={panel.key}
+              width={width}
+              height={height}
+              dashboard={dashboard}
+              panel={panel}
+              isEditing={false}
+              isViewing={true}
+              lazy={false}
+              timezone={timezone}
+              hideMenu={true}
+            />
+          );
+        }}
+      </AutoSizer>
+    </div>
+  );
+};
+
+export default connector(SoloPanelPage);

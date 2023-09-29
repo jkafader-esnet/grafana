@@ -1,15 +1,21 @@
 import { Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+
 import { AnnotationEvent, DataSourceApi } from '@grafana/data';
 
-import { AnnotationQueryRunner, AnnotationQueryRunnerOptions } from './types';
+import { executeAnnotationQuery } from '../../../annotations/executeAnnotationQuery';
 import { PanelModel } from '../../../dashboard/state';
-import { executeAnnotationQuery } from '../../../annotations/annotations_srv';
+
+import { AnnotationQueryRunner, AnnotationQueryRunnerOptions } from './types';
 import { handleAnnotationQueryRunnerError } from './utils';
 
 export class AnnotationsQueryRunner implements AnnotationQueryRunner {
-  canRun(datasource: DataSourceApi): boolean {
-    return !Boolean(datasource.annotationQuery && !datasource.annotations);
+  canRun(datasource?: DataSourceApi): boolean {
+    if (!datasource) {
+      return false;
+    }
+
+    return Boolean(!datasource.annotationQuery || datasource.annotations);
   }
 
   run({ annotation, datasource, dashboard, range }: AnnotationQueryRunnerOptions): Observable<AnnotationEvent[]> {
@@ -17,9 +23,9 @@ export class AnnotationsQueryRunner implements AnnotationQueryRunner {
       return of([]);
     }
 
-    const panel: PanelModel = ({} as unknown) as PanelModel; // deliberate setting panel to empty object because executeAnnotationQuery shouldn't depend on panelModel
+    const panel: PanelModel = {} as PanelModel; // deliberate setting panel to empty object because executeAnnotationQuery shouldn't depend on panelModel
 
-    return executeAnnotationQuery({ dashboard, range, panel }, datasource, annotation).pipe(
+    return executeAnnotationQuery({ dashboard, range, panel }, datasource!, annotation).pipe(
       map((result) => {
         return result.events ?? [];
       }),

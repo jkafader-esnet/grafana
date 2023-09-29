@@ -1,3 +1,6 @@
+import { UrlQueryMap } from '@grafana/data';
+
+import { VariableRefresh } from './types';
 import {
   containsVariable,
   ensureStringValues,
@@ -6,8 +9,6 @@ import {
   getVariableRefresh,
   isAllVariable,
 } from './utils';
-import { VariableRefresh } from './types';
-import { UrlQueryMap } from '@grafana/data';
 
 describe('isAllVariable', () => {
   it.each`
@@ -99,8 +100,8 @@ describe('findTemplateVarChanges', () => {
       aaa: 'ignore me',
     };
 
-    expect(findTemplateVarChanges(b, a)).toEqual({ 'var-xyz': 'hello' });
-    expect(findTemplateVarChanges(a, b)).toEqual({ 'var-xyz': '' });
+    expect(findTemplateVarChanges(b, a)).toEqual({ 'var-xyz': { value: 'hello' } });
+    expect(findTemplateVarChanges(a, b)).toEqual({ 'var-xyz': { value: '', removed: true } });
   });
 
   it('then should ignore equal values', () => {
@@ -161,7 +162,7 @@ describe('findTemplateVarChanges', () => {
       'var-test': 'asd',
     };
 
-    expect(findTemplateVarChanges(a, b)!['var-test']).toEqual(['test']);
+    expect(findTemplateVarChanges(a, b)!['var-test']).toEqual({ value: ['test'] });
   });
 });
 
@@ -184,12 +185,19 @@ describe('ensureStringValues', () => {
 
 describe('containsVariable', () => {
   it.each`
-    value                               | expected
-    ${''}                               | ${false}
-    ${'$var'}                           | ${true}
-    ${{ thing1: '${var}' }}             | ${true}
-    ${{ thing1: ['1', '${var}'] }}      | ${true}
-    ${{ thing1: { thing2: '${var}' } }} | ${true}
+    value                                 | expected
+    ${''}                                 | ${false}
+    ${'$var'}                             | ${true}
+    ${{ thing1: '${var}' }}               | ${true}
+    ${{ thing1: '${var:fmt}' }}           | ${true}
+    ${{ thing1: '${var.fieldPath}' }}     | ${true}
+    ${{ thing1: '${var.fieldPath:fmt}' }} | ${true}
+    ${{ thing1: ['1', '${var}'] }}        | ${true}
+    ${{ thing1: ['1', '[[var]]'] }}       | ${true}
+    ${{ thing1: ['1', '[[var:fmt]]'] }}   | ${true}
+    ${{ thing1: { thing2: '${var}' } }}   | ${true}
+    ${{ params: [['param', '$var']] }}    | ${true}
+    ${{ params: [['param', '${var}']] }}  | ${true}
   `('when called with value:$value then result should be:$expected', ({ value, expected }) => {
     expect(containsVariable(value, 'var')).toEqual(expected);
   });

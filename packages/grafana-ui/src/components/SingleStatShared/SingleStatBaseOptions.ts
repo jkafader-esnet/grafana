@@ -16,7 +16,7 @@ import {
   ValueMapping,
   VizOrientation,
 } from '@grafana/data';
-import { OptionsWithTextFormatting } from '../../options';
+import { OptionsWithTextFormatting } from '@grafana/schema';
 
 export interface SingleStatBaseOptions extends OptionsWithTextFormatting {
   reduceOptions: ReduceDataOptions;
@@ -236,7 +236,7 @@ export function sharedSingleStatMigrationHandler(panel: PanelModel<SingleStatBas
     }
   }
 
-  return options as SingleStatBaseOptions;
+  return options;
 }
 
 export function moveThresholdsAndMappingsToField(old: any) {

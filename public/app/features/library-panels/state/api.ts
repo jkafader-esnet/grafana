@@ -1,3 +1,10 @@
+import { lastValueFrom } from 'rxjs';
+
+import { defaultDashboard } from '@grafana/schema';
+import { DashboardModel } from 'app/features/dashboard/state';
+
+import { getBackendSrv } from '../../../core/services/backend_srv';
+import { DashboardSearchItem } from '../../search/types';
 import {
   LibraryElementConnectionDTO,
   LibraryElementDTO,
@@ -5,8 +12,6 @@ import {
   LibraryElementsSearchResult,
   PanelModelWithLibraryPanel,
 } from '../types';
-import { DashboardSearchHit } from '../../search/types';
-import { getBackendSrv } from '../../../core/services/backend_srv';
 
 export interface GetLibraryPanelsOptions {
   searchString?: string;
@@ -15,7 +20,7 @@ export interface GetLibraryPanelsOptions {
   excludeUid?: string;
   sortDirection?: string;
   typeFilter?: string[];
-  folderFilter?: string[];
+  folderFilterUIDs?: string[];
 }
 
 export async function getLibraryPanels({
@@ -25,13 +30,13 @@ export async function getLibraryPanels({
   excludeUid = '',
   sortDirection = '',
   typeFilter = [],
-  folderFilter = [],
+  folderFilterUIDs = [],
 }: GetLibraryPanelsOptions = {}): Promise<LibraryElementsSearchResult> {
   const params = new URLSearchParams();
   params.append('searchString', searchString);
   params.append('sortDirection', sortDirection);
   params.append('typeFilter', typeFilter.join(','));
-  params.append('folderFilter', folderFilter.join(','));
+  params.append('folderFilterUIDs', folderFilterUIDs.join(','));
   params.append('excludeUid', excludeUid);
   params.append('perPage', perPage.toString(10));
   params.append('page', page.toString(10));
@@ -43,9 +48,28 @@ export async function getLibraryPanels({
   return result;
 }
 
-export async function getLibraryPanel(uid: string): Promise<LibraryElementDTO> {
-  const { result } = await getBackendSrv().get(`/api/library-elements/${uid}`);
-  return result;
+export async function getLibraryPanel(uid: string, isHandled = false): Promise<LibraryElementDTO> {
+  const response = await lastValueFrom(
+    getBackendSrv().fetch<{ result: LibraryElementDTO }>({
+      method: 'GET',
+      url: `/api/library-elements/${uid}`,
+      showSuccessAlert: !isHandled,
+      showErrorAlert: !isHandled,
+    })
+  );
+  // kinda heavy weight migration process!!!
+  const { result } = response.data;
+  const dash = new DashboardModel({
+    ...defaultDashboard,
+    schemaVersion: 35, // should be saved in the library panel
+    panels: [result.model],
+  });
+  const { scopedVars, ...model } = dash.panels[0].getSaveModel(); // migrated panel
+  dash.destroy(); // kill event listeners
+  return {
+    ...result,
+    model,
+  };
 }
 
 export async function getLibraryPanelByName(name: string): Promise<LibraryElementDTO[]> {
@@ -55,27 +79,27 @@ export async function getLibraryPanelByName(name: string): Promise<LibraryElemen
 
 export async function addLibraryPanel(
   panelSaveModel: PanelModelWithLibraryPanel,
-  folderId: number
+  folderUid: string
 ): Promise<LibraryElementDTO> {
   const { result } = await getBackendSrv().post(`/api/library-elements`, {
-    folderId,
-    name: panelSaveModel.title,
+    folderUid,
+    name: panelSaveModel.libraryPanel.name,
     model: panelSaveModel,
     kind: LibraryElementKind.Panel,
   });
   return result;
 }
 
-export async function updateLibraryPanel(
-  panelSaveModel: PanelModelWithLibraryPanel,
-  folderId: number
-): Promise<LibraryElementDTO> {
-  const { result } = await getBackendSrv().patch(`/api/library-elements/${panelSaveModel.libraryPanel.uid}`, {
-    folderId,
-    name: panelSaveModel.title,
-    model: panelSaveModel,
-    version: panelSaveModel.libraryPanel.version,
-    kind: LibraryElementKind.Panel,
+export async function updateLibraryPanel(panelSaveModel: PanelModelWithLibraryPanel): Promise<LibraryElementDTO> {
+  const { libraryPanel, ...model } = panelSaveModel;
+  const { uid, name, version, folderUid } = libraryPanel;
+  const kind = LibraryElementKind.Panel;
+  const { result } = await getBackendSrv().patch(`/api/library-elements/${uid}`, {
+    folderUid,
+    name,
+    model,
+    version,
+    kind,
   });
   return result;
 }
@@ -93,12 +117,13 @@ export async function getLibraryPanelConnectedDashboards(
   return result;
 }
 
-export async function getConnectedDashboards(uid: string): Promise<DashboardSearchHit[]> {
+export async function getConnectedDashboards(uid: string): Promise<DashboardSearchItem[]> {
   const connections = await getLibraryPanelConnectedDashboards(uid);
   if (connections.length === 0) {
     return [];
   }
 
-  const searchHits = await getBackendSrv().search({ dashboardIds: connections.map((c) => c.connectionId) });
+  const searchHits = await getBackendSrv().search({ dashboardUIDs: connections.map((c) => c.connectionUid) });
+
   return searchHits;
 }

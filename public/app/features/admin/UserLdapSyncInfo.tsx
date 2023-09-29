@@ -1,8 +1,9 @@
 import React, { PureComponent } from 'react';
+
 import { dateTimeFormat } from '@grafana/data';
-import { AccessControlAction, SyncInfo, UserDTO } from 'app/types';
 import { Button, LinkButton } from '@grafana/ui';
 import { contextSrv } from 'app/core/core';
+import { AccessControlAction, SyncInfo, UserDTO } from 'app/types';
 
 interface Props {
   ldapSyncInfo: SyncInfo;
@@ -13,7 +14,7 @@ interface Props {
 interface State {}
 
 const format = 'dddd YYYY-MM-DD HH:mm zz';
-const debugLDAPMappingBaseURL = '/admin/ldap';
+const debugLDAPMappingBaseURL = '/admin/authentication/ldap';
 
 export class UserLdapSyncInfo extends PureComponent<Props, State> {
   onUserSync = () => {

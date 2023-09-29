@@ -3,23 +3,36 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
         "type": "dashboard"
       }
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 329,
+  "id": 78,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -27,15 +40,15 @@
           },
           "custom": {
             "fillOpacity": 70,
-            "lineWidth": 1
+            "lineWidth": 1,
+            "spanNulls": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -63,7 +76,11 @@
         },
         "mergeValues": true,
         "rowHeight": 0.9,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "pluginVersion": "7.5.0-pre",
       "targets": [
@@ -165,7 +182,6 @@
               1616557148000
             ],
             [
-              null,
               1616558756000
             ],
             [
@@ -173,7 +189,6 @@
               1616561658000
             ],
             [
-              null,
               1616562446000
             ],
             [
@@ -181,7 +196,6 @@
               1616564104000
             ],
             [
-              null,
               1616564548000
             ],
             [
@@ -197,7 +211,10 @@
       "type": "state-timeline"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -205,15 +222,15 @@
           },
           "custom": {
             "fillOpacity": 70,
-            "lineWidth": 1
+            "lineWidth": 1,
+            "spanNulls": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -241,7 +258,11 @@
         },
         "mergeValues": true,
         "rowHeight": 0.9,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "pluginVersion": "7.5.0-pre",
       "targets": [
@@ -267,7 +288,10 @@
       "type": "state-timeline"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -282,8 +306,7 @@
             "mode": "percentage",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "#EAB839",
@@ -306,7 +329,6 @@
         "y": 21
       },
       "id": 4,
-      "interval": null,
       "maxDataPoints": 20,
       "options": {
         "colWidth": 0.9,
@@ -316,7 +338,11 @@
           "placement": "bottom"
         },
         "rowHeight": 0.9,
-        "showValue": "always"
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "pluginVersion": "7.5.0-pre",
       "targets": [
@@ -354,11 +380,11 @@
     }
   ],
   "refresh": false,
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 36,
   "tags": [
     "gdev",
-    "panel-tests"
+    "panel-tests",
+    "graph-ng"
   ],
   "templating": {
     "list": []
@@ -371,5 +397,6 @@
   "timezone": "utc",
   "title": "Timeline Modes",
   "uid": "mIJjFy8Gz",
-  "version": 12
+  "version": 6,
+  "weekStart": ""
 }

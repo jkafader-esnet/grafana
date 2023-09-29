@@ -1,8 +1,13 @@
 import { cloneDeep } from 'lodash';
+
+import { reducerTester } from '../../../../../test/core/redux/reducerTester';
+import { ALL_VARIABLE_TEXT, ALL_VARIABLE_VALUE } from '../../constants';
+import { QueryVariableModel, VariableOption } from '../../types';
+
 import {
   cleanPickerState,
   hideOptions,
-  initialState as optionsPickerInitialState,
+  initialOptionPickerState as optionsPickerInitialState,
   moveOptionsHighlight,
   OPTIONS_LIMIT,
   optionsPickerReducer,
@@ -14,9 +19,6 @@ import {
   updateOptionsFromSearch,
   updateSearchQuery,
 } from './reducer';
-import { reducerTester } from '../../../../../test/core/redux/reducerTester';
-import { QueryVariableModel, VariableOption } from '../../types';
-import { ALL_VARIABLE_TEXT, ALL_VARIABLE_VALUE } from '../../state/types';
 
 const getVariableTestContext = (extend: Partial<OptionsPickerState>) => {
   return {
@@ -63,7 +65,7 @@ describe('optionsPickerReducer', () => {
         clearOthers: args.clearOthers,
         option: { text: args.option, value: args.option, selected: true },
       };
-      const expectedAsRecord: any = args.expectSelected.reduce((all: any, current: any) => {
+      const expectedAsRecord = args.expectSelected.reduce((all: any, current: any) => {
         all[current] = current;
         return all;
       }, {});
@@ -365,7 +367,7 @@ describe('optionsPickerReducer', () => {
         .whenActionIsDispatched(moveOptionsHighlight(-1))
         .thenStateShouldEqual({
           ...initialState,
-          highlightIndex: 0,
+          highlightIndex: -1,
         });
     });
   });
@@ -459,7 +461,7 @@ describe('optionsPickerReducer', () => {
         });
     });
 
-    it('should toggle all values to false when $_all is selected', () => {
+    it('should toggle each individual value to true when $_all is selected and mark ALL as selected, not supporting empty values', () => {
       const { initialState } = getVariableTestContext({
         options: [
           { text: 'All', value: '$__all', selected: true },
@@ -477,14 +479,17 @@ describe('optionsPickerReducer', () => {
           ...initialState,
           options: [
             { text: 'All', value: '$__all', selected: false },
-            { text: 'A', value: 'A', selected: false },
-            { text: 'B', value: 'B', selected: false },
+            { text: 'A', value: 'A', selected: true },
+            { text: 'B', value: 'B', selected: true },
           ],
-          selectedValues: [],
+          selectedValues: [
+            { text: 'A', value: 'A', selected: true },
+            { text: 'B', value: 'B', selected: true },
+          ],
         });
     });
 
-    it('should toggle all values to false when a option is selected', () => {
+    it('should toggle to ALL value when one regular option is selected, as empty values are not accepted', () => {
       const { initialState } = getVariableTestContext({
         options: [
           { text: 'All', value: '$__all', selected: false },
@@ -501,11 +506,11 @@ describe('optionsPickerReducer', () => {
         .thenStateShouldEqual({
           ...initialState,
           options: [
-            { text: 'All', value: '$__all', selected: false },
+            { text: 'All', value: '$__all', selected: true },
             { text: 'A', value: 'A', selected: false },
             { text: 'B', value: 'B', selected: false },
           ],
-          selectedValues: [],
+          selectedValues: [{ text: 'All', value: '$__all', selected: true }],
         });
     });
   });

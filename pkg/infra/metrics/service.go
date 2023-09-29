@@ -5,8 +5,8 @@ import (
 
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/metrics/graphitebridge"
-	"github.com/grafana/grafana/pkg/registry"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var metricsLogger log.Logger = log.New("metrics")
@@ -15,25 +15,27 @@ type logWrapper struct {
 	logger log.Logger
 }
 
-func (lw *logWrapper) Println(v ...interface{}) {
+func (lw *logWrapper) Println(v ...any) {
 	lw.logger.Info("graphite metric bridge", v...)
 }
 
 func init() {
-	registry.RegisterService(&InternalMetricsService{})
 	initMetricVars()
 	initFrontendMetrics()
 }
 
+func ProvideService(cfg *setting.Cfg) (*InternalMetricsService, error) {
+	s := &InternalMetricsService{
+		Cfg: cfg,
+	}
+	return s, s.readSettings()
+}
+
 type InternalMetricsService struct {
-	Cfg *setting.Cfg `inject:""`
+	Cfg *setting.Cfg
 
 	intervalSeconds int64
 	graphiteCfg     *graphitebridge.Config
-}
-
-func (im *InternalMetricsService) Init() error {
-	return im.readSettings()
 }
 
 func (im *InternalMetricsService) Run(ctx context.Context) error {
@@ -52,3 +54,6 @@ func (im *InternalMetricsService) Run(ctx context.Context) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
+
+func ProvideRegisterer() prometheus.Registerer        { return prometheus.DefaultRegisterer }
+func ProvideRegistererForTest() prometheus.Registerer { return prometheus.NewRegistry() }

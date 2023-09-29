@@ -1,12 +1,14 @@
-import React, { PureComponent } from 'react';
 import { css } from '@emotion/css';
 import { uniqueId } from 'lodash';
+import React, { PureComponent } from 'react';
+
 import { DataSourceSettings } from '@grafana/data';
+
+import { stylesFactory } from '../../themes';
 import { Button } from '../Button';
 import { FormField } from '../FormField/FormField';
 import { Icon } from '../Icon/Icon';
 import { SecretFormField } from '../SecretFormField/SecretFormField';
-import { stylesFactory } from '../../themes';
 
 export interface CustomHeader {
   id: string;
@@ -36,24 +38,23 @@ interface CustomHeaderRowProps {
 
 const getCustomHeaderRowStyles = stylesFactory(() => {
   return {
-    layout: css`
-      display: flex;
-      align-items: center;
-      margin-bottom: 4px;
-      > * {
-        margin-left: 4px;
-        margin-bottom: 0;
-        height: 100%;
-        &:first-child,
-        &:last-child {
-          margin-left: 0;
-        }
-      }
-    `,
+    layout: css({
+      display: 'flex',
+      alignItems: 'center',
+      marginBottom: '4px',
+      '> *': {
+        marginLeft: '4px',
+        marginBottom: 0,
+        height: '100%',
+        '&:first-child, &:last-child': {
+          marginLeft: 0,
+        },
+      },
+    }),
   };
 });
 
-const CustomHeaderRow: React.FC<CustomHeaderRowProps> = ({ header, onBlur, onChange, onRemove, onReset }) => {
+const CustomHeaderRow = ({ header, onBlur, onChange, onRemove, onReset }: CustomHeaderRowProps) => {
   const styles = getCustomHeaderRowStyles();
   return (
     <div className={styles.layout}>
@@ -68,6 +69,7 @@ const CustomHeaderRow: React.FC<CustomHeaderRowProps> = ({ header, onBlur, onCha
       />
       <SecretFormField
         label="Value"
+        aria-label="Value"
         name="value"
         isConfigured={header.configured}
         value={header.value}
@@ -193,6 +195,8 @@ export class CustomHeadersSettings extends PureComponent<Props, State> {
 
   render() {
     const { headers } = this.state;
+    const { dataSourceConfig } = this.props;
+
     return (
       <div className={'gf-form-group'}>
         <div className="gf-form">
@@ -212,18 +216,20 @@ export class CustomHeadersSettings extends PureComponent<Props, State> {
             />
           ))}
         </div>
-        <div className="gf-form">
-          <Button
-            variant="secondary"
-            icon="plus"
-            type="button"
-            onClick={(e) => {
-              this.onHeaderAdd();
-            }}
-          >
-            Add header
-          </Button>
-        </div>
+        {!dataSourceConfig.readOnly && (
+          <div className="gf-form">
+            <Button
+              variant="secondary"
+              icon="plus"
+              type="button"
+              onClick={(e) => {
+                this.onHeaderAdd();
+              }}
+            >
+              Add header
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

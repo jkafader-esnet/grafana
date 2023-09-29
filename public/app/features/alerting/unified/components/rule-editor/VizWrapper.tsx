@@ -1,67 +1,89 @@
-import React, { FC, useState } from 'react';
-import AutoSizer from 'react-virtualized-auto-sizer';
 import { css } from '@emotion/css';
-import { GrafanaTheme2, PanelData } from '@grafana/data';
-import { PanelRenderer } from '@grafana/runtime';
+import React from 'react';
+import AutoSizer from 'react-virtualized-auto-sizer';
+
+import { GrafanaTheme2, isTimeSeriesFrames, PanelData, ThresholdsConfig } from '@grafana/data';
+import { GraphTresholdsStyleMode } from '@grafana/schema';
 import { useStyles2 } from '@grafana/ui';
-import { PanelOptions } from 'app/plugins/panel/table/models.gen';
-import { useVizHeight } from '../../hooks/useVizHeight';
-import { SupportedPanelPlugins, PanelPluginsButtonGroup } from '../PanelPluginsButtonGroup';
+import appEvents from 'app/core/app_events';
+import { GraphContainer } from 'app/features/explore/Graph/GraphContainer';
+
+import { ExpressionResult } from '../expressions/Expression';
+
+import { getStatusMessage } from './util';
 
 interface Props {
   data: PanelData;
-  currentPanel: SupportedPanelPlugins;
-  changePanel: (panel: SupportedPanelPlugins) => void;
+  thresholds?: ThresholdsConfig;
+  thresholdsType?: GraphTresholdsStyleMode;
+  onThresholdsChange?: (thresholds: ThresholdsConfig) => void;
 }
 
-export const VizWrapper: FC<Props> = ({ data, currentPanel, changePanel }) => {
-  const [options, setOptions] = useState<PanelOptions>({
-    frameIndex: 0,
-    showHeader: true,
-  });
-  const vizHeight = useVizHeight(data, currentPanel, options.frameIndex);
-  const styles = useStyles2(getStyles(vizHeight));
-
-  if (!options || !data) {
-    return null;
-  }
+/** The VizWrapper is just a simple component that renders either a table or a graph based on the type of data we receive from "PanelData" */
+export const VizWrapper = ({ data, thresholds, thresholdsType }: Props) => {
+  const styles = useStyles2(getStyles);
+  const isTimeSeriesData = isTimeSeriesFrames(data.series);
+  const statusMessage = getStatusMessage(data);
+  const thresholdsStyle = thresholdsType ? { mode: thresholdsType } : undefined;
+  const timeRange = {
+    from: data.timeRange.from.valueOf(),
+    to: data.timeRange.to.valueOf(),
+  };
 
   return (
     <div className={styles.wrapper}>
-      <div className={styles.buttonGroup}>
-        <PanelPluginsButtonGroup onChange={changePanel} value={currentPanel} />
-      </div>
-      <AutoSizer>
-        {({ width }) => {
-          if (width === 0) {
-            return null;
-          }
-          return (
-            <div style={{ height: `${vizHeight}px`, width: `${width}px` }}>
-              <PanelRenderer
-                height={vizHeight}
+      <AutoSizer disableHeight>
+        {({ width }) => (
+          <div style={{ width }}>
+            {isTimeSeriesData ? (
+              <GraphContainer
+                statusMessage={statusMessage}
+                data={data.series}
+                eventBus={appEvents}
+                height={300}
                 width={width}
-                data={data}
-                pluginId={currentPanel}
-                title="title"
-                onOptionsChange={setOptions}
-                options={options}
+                absoluteRange={timeRange}
+                timeZone="browser"
+                onChangeTime={() => {}}
+                splitOpenFn={() => {}}
+                loadingState={data.state}
+                thresholdsConfig={thresholds}
+                thresholdsStyle={thresholdsStyle}
               />
-            </div>
-          );
-        }}
+            ) : (
+              <div className={styles.instantVectorResultWrapper}>
+                <header className={styles.title}>Table</header>
+                <ExpressionResult series={data.series} />
+              </div>
+            )}
+          </div>
+        )}
       </AutoSizer>
     </div>
   );
 };
 
-const getStyles = (visHeight: number) => (theme: GrafanaTheme2) => ({
+const getStyles = (theme: GrafanaTheme2) => ({
   wrapper: css`
-    padding: 0 ${theme.spacing(2)};
-    height: ${visHeight + theme.spacing.gridSize * 4}px;
+    width: 100%;
+    position: relative;
   `,
-  buttonGroup: css`
+  instantVectorResultWrapper: css`
+    border: solid 1px ${theme.colors.border.medium};
+    border-radius: ${theme.shape.radius.default};
+    padding: 0;
+
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    flex-wrap: nowrap;
   `,
+  title: css({
+    label: 'panel-title',
+    padding: theme.spacing(),
+    textOverflow: 'ellipsis',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    fontSize: theme.typography.h6.fontSize,
+    fontWeight: theme.typography.h6.fontWeight,
+  }),
 });

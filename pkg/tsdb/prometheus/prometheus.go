@@ -4,196 +4,133 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/patrickmn/go-cache"
+	apiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+
 	"github.com/grafana/grafana/pkg/infra/httpclient"
 	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/plugins"
-	"github.com/grafana/grafana/pkg/tsdb/interval"
-	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/client_golang/api"
-	apiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/model"
+	"github.com/grafana/grafana/pkg/infra/tracing"
+	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/client"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/instrumentation"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/querydata"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/resource"
 )
 
-var (
-	plog         log.Logger
-	legendFormat *regexp.Regexp = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
-)
+var plog = log.New("tsdb.prometheus")
 
-func init() {
-	plog = log.New("tsdb.prometheus")
+type Service struct {
+	im       instancemgmt.InstanceManager
+	features featuremgmt.FeatureToggles
 }
 
-type PrometheusExecutor struct {
-	client             apiv1.API
-	intervalCalculator interval.Calculator
+type instance struct {
+	queryData    *querydata.QueryData
+	resource     *resource.Resource
+	versionCache *cache.Cache
 }
 
-//nolint: staticcheck // plugins.DataPlugin deprecated
-func New(provider httpclient.Provider) func(*models.DataSource) (plugins.DataPlugin, error) {
-	return func(dsInfo *models.DataSource) (plugins.DataPlugin, error) {
-		transport, err := dsInfo.GetHTTPTransport(provider, customQueryParametersMiddleware(plog))
+func ProvideService(httpClientProvider httpclient.Provider, cfg *setting.Cfg, features featuremgmt.FeatureToggles, tracer tracing.Tracer) *Service {
+	plog.Debug("Initializing")
+	return &Service{
+		im:       datasource.NewInstanceManager(newInstanceSettings(httpClientProvider, cfg, features, tracer)),
+		features: features,
+	}
+}
+
+func newInstanceSettings(httpClientProvider httpclient.Provider, cfg *setting.Cfg, features featuremgmt.FeatureToggles, tracer tracing.Tracer) datasource.InstanceFactoryFunc {
+	return func(_ context.Context, settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+		// Creates a http roundTripper.
+		opts, err := client.CreateTransportOptions(settings, cfg, plog)
+		if err != nil {
+			return nil, fmt.Errorf("error creating transport options: %v", err)
+		}
+		httpClient, err := httpClientProvider.New(*opts)
+		if err != nil {
+			return nil, fmt.Errorf("error creating http client: %v", err)
+		}
+
+		// New version using custom client and better response parsing
+		qd, err := querydata.New(httpClient, features, tracer, settings, plog)
 		if err != nil {
 			return nil, err
 		}
 
-		cfg := api.Config{
-			Address:      dsInfo.Url,
-			RoundTripper: transport,
-		}
-
-		client, err := api.NewClient(cfg)
+		// Resource call management using new custom client same as querydata
+		r, err := resource.New(httpClient, settings, plog)
 		if err != nil {
 			return nil, err
 		}
 
-		return &PrometheusExecutor{
-			intervalCalculator: interval.NewCalculator(interval.CalculatorOptions{MinInterval: time.Second * 1}),
-			client:             apiv1.NewAPI(client),
+		return instance{
+			queryData:    qd,
+			resource:     r,
+			versionCache: cache.New(time.Minute*1, time.Minute*5),
 		}, nil
 	}
 }
 
-//nolint: staticcheck // plugins.DataResponse deprecated
-func (e *PrometheusExecutor) DataQuery(ctx context.Context, dsInfo *models.DataSource,
-	tsdbQuery plugins.DataQuery) (plugins.DataResponse, error) {
-	result := plugins.DataResponse{
-		Results: map[string]plugins.DataQueryResult{},
+func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	if len(req.Queries) == 0 {
+		err := fmt.Errorf("query contains no queries")
+		instrumentation.UpdateQueryDataMetrics(err, nil)
+		return &backend.QueryDataResponse{}, err
 	}
 
-	queries, err := e.parseQuery(dsInfo, tsdbQuery)
+	i, err := s.getInstance(ctx, req.PluginContext)
 	if err != nil {
-		return result, err
+		instrumentation.UpdateQueryDataMetrics(err, nil)
+		return nil, err
 	}
 
-	for _, query := range queries {
-		timeRange := apiv1.Range{
-			Start: query.Start,
-			End:   query.End,
-			Step:  query.Step,
-		}
+	qd, err := i.queryData.Execute(ctx, req)
+	instrumentation.UpdateQueryDataMetrics(err, qd)
 
-		plog.Debug("Sending query", "start", timeRange.Start, "end", timeRange.End, "step", timeRange.Step, "query", query.Expr)
-
-		span, ctx := opentracing.StartSpanFromContext(ctx, "datasource.prometheus")
-		span.SetTag("expr", query.Expr)
-		span.SetTag("start_unixnano", query.Start.UnixNano())
-		span.SetTag("stop_unixnano", query.End.UnixNano())
-		defer span.Finish()
-
-		value, _, err := e.client.QueryRange(ctx, query.Expr, timeRange)
-
-		if err != nil {
-			return result, err
-		}
-
-		queryResult, err := parseResponse(value, query)
-		if err != nil {
-			return result, err
-		}
-		result.Results[query.RefId] = queryResult
-	}
-
-	return result, nil
+	return qd, err
 }
 
-func formatLegend(metric model.Metric, query *PrometheusQuery) string {
-	if query.LegendFormat == "" {
-		return metric.String()
+func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	i, err := s.getInstance(ctx, req.PluginContext)
+	if err != nil {
+		return err
 	}
 
-	result := legendFormat.ReplaceAllFunc([]byte(query.LegendFormat), func(in []byte) []byte {
-		labelName := strings.Replace(string(in), "{{", "", 1)
-		labelName = strings.Replace(labelName, "}}", "", 1)
-		labelName = strings.TrimSpace(labelName)
-		if val, exists := metric[model.LabelName(labelName)]; exists {
-			return []byte(val)
+	if strings.EqualFold(req.Path, "version-detect") {
+		versionObj, found := i.versionCache.Get("version")
+		if found {
+			return sender.Send(versionObj.(*backend.CallResourceResponse))
 		}
-		return []byte{}
-	})
 
-	return string(result)
+		vResp, err := i.resource.DetectVersion(ctx, req)
+		if err != nil {
+			return err
+		}
+		i.versionCache.Set("version", vResp, cache.DefaultExpiration)
+		return sender.Send(vResp)
+	}
+
+	resp, err := i.resource.Execute(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	return sender.Send(resp)
 }
 
-func (e *PrometheusExecutor) parseQuery(dsInfo *models.DataSource, query plugins.DataQuery) (
-	[]*PrometheusQuery, error) {
-	qs := []*PrometheusQuery{}
-	for _, queryModel := range query.Queries {
-		expr, err := queryModel.Model.Get("expr").String()
-		if err != nil {
-			return nil, err
-		}
-
-		format := queryModel.Model.Get("legendFormat").MustString("")
-
-		start, err := query.TimeRange.ParseFrom()
-		if err != nil {
-			return nil, err
-		}
-
-		end, err := query.TimeRange.ParseTo()
-		if err != nil {
-			return nil, err
-		}
-
-		dsInterval, err := interval.GetIntervalFrom(dsInfo, queryModel.Model, time.Second*15)
-		if err != nil {
-			return nil, err
-		}
-
-		intervalFactor := queryModel.Model.Get("intervalFactor").MustInt64(1)
-		interval := e.intervalCalculator.Calculate(*query.TimeRange, dsInterval)
-		step := time.Duration(int64(interval.Value) * intervalFactor)
-
-		qs = append(qs, &PrometheusQuery{
-			Expr:         expr,
-			Step:         step,
-			LegendFormat: format,
-			Start:        start,
-			End:          end,
-			RefId:        queryModel.RefID,
-		})
+func (s *Service) getInstance(ctx context.Context, pluginCtx backend.PluginContext) (*instance, error) {
+	i, err := s.im.Get(ctx, pluginCtx)
+	if err != nil {
+		return nil, err
 	}
-
-	return qs, nil
-}
-
-//nolint: staticcheck // plugins.DataQueryResult deprecated
-func parseResponse(value model.Value, query *PrometheusQuery) (plugins.DataQueryResult, error) {
-	var queryRes plugins.DataQueryResult
-	frames := data.Frames{}
-
-	matrix, ok := value.(model.Matrix)
-	if !ok {
-		return queryRes, fmt.Errorf("unsupported result format: %q", value.Type().String())
-	}
-
-	for _, v := range matrix {
-		name := formatLegend(v.Metric, query)
-		tags := make(map[string]string, len(v.Metric))
-		timeVector := make([]time.Time, 0, len(v.Values))
-		values := make([]float64, 0, len(v.Values))
-
-		for k, v := range v.Metric {
-			tags[string(k)] = string(v)
-		}
-
-		for _, k := range v.Values {
-			timeVector = append(timeVector, time.Unix(k.Timestamp.Unix(), 0).UTC())
-			values = append(values, float64(k.Value))
-		}
-		frames = append(frames, data.NewFrame(name,
-			data.NewField("time", nil, timeVector),
-			data.NewField("value", tags, values).SetConfig(&data.FieldConfig{DisplayNameFromDS: name})))
-	}
-	queryRes.Dataframes = plugins.NewDecodedDataFrames(frames)
-
-	return queryRes, nil
+	in := i.(instance)
+	return &in, nil
 }
 
 // IsAPIError returns whether err is or wraps a Prometheus error.

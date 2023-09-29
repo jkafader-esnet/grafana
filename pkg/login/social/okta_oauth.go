@@ -1,23 +1,23 @@
 package social
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/util/errutil"
+	"github.com/go-jose/go-jose/v3/jwt"
 	"golang.org/x/oauth2"
-	"gopkg.in/square/go-jose.v2/jwt"
+
+	"github.com/grafana/grafana/pkg/models/roletype"
 )
 
 type SocialOkta struct {
 	*SocialBase
-	apiUrl              string
-	allowedGroups       []string
-	roleAttributePath   string
-	roleAttributeStrict bool
+	apiUrl          string
+	allowedGroups   []string
+	skipOrgRoleSync bool
 }
 
 type OktaUserInfoJson struct {
@@ -47,11 +47,7 @@ func (claims *OktaClaims) extractEmail() string {
 	return claims.Email
 }
 
-func (s *SocialOkta) Type() int {
-	return int(models.OKTA)
-}
-
-func (s *SocialOkta) UserInfo(client *http.Client, token *oauth2.Token) (*BasicUserInfo, error) {
+func (s *SocialOkta) UserInfo(ctx context.Context, client *http.Client, token *oauth2.Token) (*BasicUserInfo, error) {
 	idToken := token.Extra("id_token")
 	if idToken == nil {
 		return nil, fmt.Errorf("no id_token found")
@@ -59,12 +55,12 @@ func (s *SocialOkta) UserInfo(client *http.Client, token *oauth2.Token) (*BasicU
 
 	parsedToken, err := jwt.ParseSigned(idToken.(string))
 	if err != nil {
-		return nil, errutil.Wrapf(err, "error parsing id token")
+		return nil, fmt.Errorf("error parsing id token: %w", err)
 	}
 
 	var claims OktaClaims
 	if err := parsedToken.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		return nil, errutil.Wrapf(err, "error getting claims from id token")
+		return nil, fmt.Errorf("error getting claims from id token: %w", err)
 	}
 
 	email := claims.extractEmail()
@@ -73,17 +69,9 @@ func (s *SocialOkta) UserInfo(client *http.Client, token *oauth2.Token) (*BasicU
 	}
 
 	var data OktaUserInfoJson
-	err = s.extractAPI(&data, client)
+	err = s.extractAPI(ctx, &data, client)
 	if err != nil {
 		return nil, err
-	}
-
-	role, err := s.extractRole(&data)
-	if err != nil {
-		s.log.Error("Failed to extract role", "error", err)
-	}
-	if s.roleAttributeStrict && !models.RoleType(role).IsValid() {
-		return nil, errors.New("invalid role")
 	}
 
 	groups := s.GetGroups(&data)
@@ -91,21 +79,39 @@ func (s *SocialOkta) UserInfo(client *http.Client, token *oauth2.Token) (*BasicU
 		return nil, errMissingGroupMembership
 	}
 
+	var role roletype.RoleType
+	var isGrafanaAdmin *bool
+	if !s.skipOrgRoleSync {
+		var grafanaAdmin bool
+		role, grafanaAdmin, err = s.extractRoleAndAdmin(data.rawJSON, groups)
+		if err != nil {
+			return nil, err
+		}
+
+		if s.allowAssignGrafanaAdmin {
+			isGrafanaAdmin = &grafanaAdmin
+		}
+	}
+	if s.allowAssignGrafanaAdmin && s.skipOrgRoleSync {
+		s.log.Debug("AllowAssignGrafanaAdmin and skipOrgRoleSync are both set, Grafana Admin role will not be synced, consider setting one or the other")
+	}
+
 	return &BasicUserInfo{
-		Id:     claims.ID,
-		Name:   claims.Name,
-		Email:  email,
-		Login:  email,
-		Role:   role,
-		Groups: groups,
+		Id:             claims.ID,
+		Name:           claims.Name,
+		Email:          email,
+		Login:          email,
+		Role:           role,
+		IsGrafanaAdmin: isGrafanaAdmin,
+		Groups:         groups,
 	}, nil
 }
 
-func (s *SocialOkta) extractAPI(data *OktaUserInfoJson, client *http.Client) error {
-	rawUserInfoResponse, err := s.httpGet(client, s.apiUrl)
+func (s *SocialOkta) extractAPI(ctx context.Context, data *OktaUserInfoJson, client *http.Client) error {
+	rawUserInfoResponse, err := s.httpGet(ctx, client, s.apiUrl)
 	if err != nil {
 		s.log.Debug("Error getting user info response", "url", s.apiUrl, "error", err)
-		return errutil.Wrapf(err, "error getting user info response")
+		return fmt.Errorf("error getting user info response: %w", err)
 	}
 	data.rawJSON = rawUserInfoResponse.Body
 
@@ -113,23 +119,11 @@ func (s *SocialOkta) extractAPI(data *OktaUserInfoJson, client *http.Client) err
 	if err != nil {
 		s.log.Debug("Error decoding user info response", "raw_json", data.rawJSON, "error", err)
 		data.rawJSON = []byte{}
-		return errutil.Wrapf(err, "error decoding user info response")
+		return fmt.Errorf("error decoding user info response: %w", err)
 	}
 
 	s.log.Debug("Received user info response", "raw_json", string(data.rawJSON), "data", data)
 	return nil
-}
-
-func (s *SocialOkta) extractRole(data *OktaUserInfoJson) (string, error) {
-	if s.roleAttributePath == "" {
-		return "", nil
-	}
-
-	role, err := s.searchJSONForStringAttr(s.roleAttributePath, data.rawJSON)
-	if err != nil {
-		return "", err
-	}
-	return role, nil
 }
 
 func (s *SocialOkta) GetGroups(data *OktaUserInfoJson) []string {

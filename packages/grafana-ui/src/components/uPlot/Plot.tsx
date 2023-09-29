@@ -1,8 +1,8 @@
-import React, { createRef, MutableRefObject } from 'react';
-import uPlot, { Options } from 'uplot';
-import { PlotContext, PlotContextType } from './context';
-import { DEFAULT_PLOT_CONFIG, pluginLog } from './utils';
+import React, { Component, createRef } from 'react';
+import uPlot, { AlignedData, Options } from 'uplot';
+
 import { PlotProps } from './types';
+import { pluginLog } from './utils';
 
 function sameDims(prevProps: PlotProps, nextProps: PlotProps) {
   return nextProps.width === prevProps.width && nextProps.height === prevProps.height;
@@ -17,7 +17,7 @@ function sameConfig(prevProps: PlotProps, nextProps: PlotProps) {
 }
 
 type UPlotChartState = {
-  ctx: PlotContextType;
+  plot: uPlot | null;
 };
 
 /**
@@ -26,7 +26,7 @@ type UPlotChartState = {
  * Receives a data frame that is x-axis aligned, as of https://github.com/leeoniya/uPlot/tree/master/docs#data-format
  * Exposes context for uPlot instance access
  */
-export class UPlotChart extends React.Component<PlotProps, UPlotChartState> {
+export class UPlotChart extends Component<PlotProps, UPlotChartState> {
   plotContainer = createRef<HTMLDivElement>();
   plotCanvasBBox = createRef<DOMRect>();
 
@@ -34,59 +34,40 @@ export class UPlotChart extends React.Component<PlotProps, UPlotChartState> {
     super(props);
 
     this.state = {
-      ctx: {
-        plot: null,
-        getCanvasBoundingBox: () => {
-          return this.plotCanvasBBox.current;
-        },
-      },
+      plot: null,
     };
   }
 
   reinitPlot() {
-    let { ctx } = this.state;
     let { width, height, plotRef } = this.props;
 
-    ctx.plot?.destroy();
+    this.state.plot?.destroy();
 
     if (width === 0 && height === 0) {
       return;
     }
-
-    this.props.config.addHook('syncRect', (u, rect) => {
-      (this.plotCanvasBBox as MutableRefObject<any>).current = rect;
-    });
 
     this.props.config.addHook('setSize', (u) => {
       const canvas = u.over;
       if (!canvas) {
         return;
       }
-      (this.plotCanvasBBox as MutableRefObject<any>).current = canvas.getBoundingClientRect();
     });
 
     const config: Options = {
-      ...DEFAULT_PLOT_CONFIG,
-      width: this.props.width,
-      height: this.props.height,
-      ms: 1 as 1,
+      width: Math.floor(this.props.width),
+      height: Math.floor(this.props.height),
       ...this.props.config.getConfig(),
     };
 
     pluginLog('UPlot', false, 'Reinitializing plot', config);
-    const plot = new uPlot(config, this.props.data, this.plotContainer!.current!);
+    const plot = new uPlot(config, this.props.data as AlignedData, this.plotContainer!.current!);
 
     if (plotRef) {
       plotRef(plot);
     }
 
-    this.setState((s) => ({
-      ...s,
-      ctx: {
-        ...s.ctx,
-        plot,
-      },
-    }));
+    this.setState({ plot });
   }
 
   componentDidMount() {
@@ -94,41 +75,30 @@ export class UPlotChart extends React.Component<PlotProps, UPlotChartState> {
   }
 
   componentWillUnmount() {
-    this.state.ctx.plot?.destroy();
-  }
-
-  shouldComponentUpdate(nextProps: PlotProps, nextState: UPlotChartState) {
-    return (
-      nextState.ctx !== this.state.ctx ||
-      !sameDims(this.props, nextProps) ||
-      !sameData(this.props, nextProps) ||
-      !sameConfig(this.props, nextProps)
-    );
+    this.state.plot?.destroy();
   }
 
   componentDidUpdate(prevProps: PlotProps) {
-    let { ctx } = this.state;
+    let { plot } = this.state;
 
     if (!sameDims(prevProps, this.props)) {
-      ctx.plot?.setSize({
-        width: this.props.width,
-        height: this.props.height,
+      plot?.setSize({
+        width: Math.floor(this.props.width),
+        height: Math.floor(this.props.height),
       });
     } else if (!sameConfig(prevProps, this.props)) {
       this.reinitPlot();
     } else if (!sameData(prevProps, this.props)) {
-      ctx.plot?.setData(this.props.data);
+      plot?.setData(this.props.data as AlignedData);
     }
   }
 
   render() {
     return (
-      <PlotContext.Provider value={this.state.ctx}>
-        <div style={{ position: 'relative' }}>
-          <div ref={this.plotContainer} data-testid="uplot-main-div" />
-          {this.props.children}
-        </div>
-      </PlotContext.Provider>
+      <div style={{ position: 'relative' }}>
+        <div ref={this.plotContainer} data-testid="uplot-main-div" />
+        {this.props.children}
+      </div>
     );
   }
 }

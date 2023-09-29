@@ -1,14 +1,15 @@
+import { renderHook } from '@testing-library/react';
 import React, { PropsWithChildren } from 'react';
-import { ElasticDatasource } from '../datasource';
 import { from } from 'rxjs';
-import { ElasticsearchProvider } from '../components/QueryEditor/ElasticsearchQueryContext';
+
 import { getDefaultTimeRange } from '@grafana/data';
-import { ElasticsearchQuery } from '../types';
-import { defaultBucketAgg, defaultMetricAgg } from '../query_def';
-import { renderHook } from '@testing-library/react-hooks';
+
+import { ElasticsearchProvider } from '../components/QueryEditor/ElasticsearchQueryContext';
+import { ElasticDatasource } from '../datasource';
+import { defaultBucketAgg, defaultMetricAgg } from '../queryDef';
+import { ElasticsearchQuery, MetricAggregationType, BucketAggregationType } from '../types';
+
 import { useFields } from './useFields';
-import { MetricAggregationType } from '../components/QueryEditor/MetricAggregationsEditor/aggregations';
-import { BucketAggregationType } from '../components/QueryEditor/BucketAggregationsEditor/aggregations';
 
 describe('useFields hook', () => {
   // TODO: If we move the field type to the configuration objects as described in the hook's source
@@ -59,6 +60,11 @@ describe('useFields hook', () => {
     rerender('date_histogram');
     result.current();
     expect(getFields).toHaveBeenLastCalledWith(['date'], timeRange);
+
+    // Histrogram only works on numbers
+    rerender('histogram');
+    result.current();
+    expect(getFields).toHaveBeenLastCalledWith(['number'], timeRange);
 
     // Geohash Grid only works on geo_point data
     rerender('geohash_grid');

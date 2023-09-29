@@ -1,5 +1,6 @@
-import React from 'react';
 import { css, cx } from '@emotion/css';
+import React from 'react';
+
 import { GrafanaTheme2, renderMarkdown } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 
@@ -30,7 +31,7 @@ function markdownHelper(markdown: string) {
 OperationRowHelp.displayName = 'OperationRowHelp';
 
 const getStyles = (theme: GrafanaTheme2) => {
-  const borderRadius = theme.shape.borderRadius();
+  const borderRadius = theme.shape.radius.default;
 
   return {
     wrapper: css`

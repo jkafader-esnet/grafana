@@ -1,75 +1,93 @@
-import React from 'react';
 import { css, cx } from '@emotion/css';
+import React from 'react';
 
-import { AppPlugin, GrafanaTheme2, GrafanaPlugin, PluginMeta } from '@grafana/data';
+import { AppPlugin, GrafanaTheme2, PluginContextProvider, UrlQueryMap } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
 
 import { VersionList } from '../components/VersionList';
-import { AppConfigCtrlWrapper } from '../../wrappers/AppConfigWrapper';
-import { PluginDashboards } from '../../PluginDashboards';
+import { usePluginConfig } from '../hooks/usePluginConfig';
+import { CatalogPlugin, PluginTabIds } from '../types';
 
-type PluginDetailsBodyProps = {
-  tab: { label: string };
-  plugin: GrafanaPlugin<PluginMeta<{}>> | undefined;
-  remoteVersions: Array<{ version: string; createdAt: string }>;
-  readme: string;
+import { AppConfigCtrlWrapper } from './AppConfigWrapper';
+import { PluginDashboards } from './PluginDashboards';
+import { PluginUsage } from './PluginUsage';
+
+type Props = {
+  plugin: CatalogPlugin;
+  queryParams: UrlQueryMap;
+  pageId: string;
 };
 
-export function PluginDetailsBody({ tab, plugin, remoteVersions, readme }: PluginDetailsBodyProps): JSX.Element | null {
+export function PluginDetailsBody({ plugin, queryParams, pageId }: Props): JSX.Element {
   const styles = useStyles2(getStyles);
+  const { value: pluginConfig } = usePluginConfig(plugin);
 
-  if (tab?.label === 'Overview') {
+  if (pageId === PluginTabIds.OVERVIEW) {
     return (
       <div
         className={cx(styles.readme, styles.container)}
-        dangerouslySetInnerHTML={{ __html: readme ?? 'No plugin help or readme markdown file was found' }}
+        dangerouslySetInnerHTML={{
+          __html: plugin.details?.readme ?? 'No plugin help or readme markdown file was found',
+        }}
       />
     );
   }
 
-  if (tab?.label === 'Version history') {
+  if (pageId === PluginTabIds.VERSIONS) {
     return (
       <div className={styles.container}>
-        <VersionList versions={remoteVersions ?? []} />
+        <VersionList versions={plugin.details?.versions} installedVersion={plugin.installedVersion} />
       </div>
     );
   }
 
-  if (tab?.label === 'Config' && plugin?.angularConfigCtrl) {
+  if (pageId === PluginTabIds.CONFIG && pluginConfig?.angularConfigCtrl) {
     return (
       <div className={styles.container}>
-        <AppConfigCtrlWrapper app={plugin as AppPlugin} />
+        <AppConfigCtrlWrapper app={pluginConfig as AppPlugin} />
       </div>
     );
   }
 
-  if (plugin?.configPages) {
-    for (const configPage of plugin.configPages) {
-      if (tab?.label === configPage.title) {
+  if (pluginConfig?.configPages) {
+    for (const configPage of pluginConfig.configPages) {
+      if (pageId === configPage.id) {
         return (
           <div className={styles.container}>
-            <configPage.body plugin={plugin} query={{}} />
+            <PluginContextProvider meta={pluginConfig.meta}>
+              <configPage.body plugin={pluginConfig} query={queryParams} />
+            </PluginContextProvider>
           </div>
         );
       }
     }
   }
 
-  if (tab?.label === 'Dashboards' && plugin) {
+  if (pageId === PluginTabIds.USAGE && pluginConfig) {
     return (
       <div className={styles.container}>
-        <PluginDashboards plugin={plugin.meta} />
+        <PluginUsage plugin={pluginConfig?.meta} />
       </div>
     );
   }
 
-  return null;
+  if (pageId === PluginTabIds.DASHBOARDS && pluginConfig) {
+    return (
+      <div className={styles.container}>
+        <PluginDashboards plugin={pluginConfig?.meta} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.container}>
+      <p>Page not found.</p>
+    </div>
+  );
 }
 
 export const getStyles = (theme: GrafanaTheme2) => ({
-  container: css`
-    padding: ${theme.spacing(3, 4)};
-  `,
+  container: css``,
   readme: css`
     & img {
       max-width: 100%;
@@ -90,6 +108,33 @@ export const getStyles = (theme: GrafanaTheme2) => ({
       margin-left: ${theme.spacing(2)};
       & > p {
         margin: ${theme.spacing()} 0;
+      }
+    }
+
+    a {
+      color: ${theme.colors.text.link};
+
+      &:hover {
+        color: ${theme.colors.text.link};
+        text-decoration: underline;
+      }
+    }
+
+    table {
+      table-layout: fixed;
+      width: 100%;
+
+      td,
+      th {
+        overflow-x: auto;
+        padding: ${theme.spacing(0.5)} ${theme.spacing(1)};
+      }
+
+      table,
+      th,
+      td {
+        border: 1px solid ${theme.colors.border.medium};
+        border-collapse: collapse;
       }
     }
   `,

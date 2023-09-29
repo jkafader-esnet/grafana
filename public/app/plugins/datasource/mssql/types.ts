@@ -1,21 +1,61 @@
-import { DataQuery, DataSourceJsonData } from '@grafana/data';
+import { DataSourceJsonData } from '@grafana/data';
+import { HttpSettingsBaseProps } from '@grafana/ui/src/components/DataSourceSettings/types';
+import { SQLOptions } from 'app/features/plugins/sql/types';
 
-export interface MssqlQueryForInterpolation {
-  alias?: any;
-  format?: any;
-  rawSql?: any;
-  refId: any;
-  hide?: any;
+export enum MSSQLAuthenticationType {
+  sqlAuth = 'SQL Server Authentication',
+  windowsAuth = 'Windows Authentication',
+  azureAuth = 'Azure AD Authentication',
 }
 
-export type ResultFormat = 'time_series' | 'table';
-
-export interface MssqlQuery extends DataQuery {
-  alias?: string;
-  format?: ResultFormat;
-  rawSql?: any;
+export enum MSSQLEncryptOptions {
+  disable = 'disable',
+  false = 'false',
+  true = 'true',
 }
 
-export interface MssqlOptions extends DataSourceJsonData {
-  timeInterval: string;
+export enum AzureCloud {
+  Public = 'AzureCloud',
+  None = '',
 }
+
+export type ConcealedSecretType = symbol;
+
+export enum AzureAuthType {
+  MSI = 'msi',
+  CLIENT_SECRET = 'clientsecret',
+}
+
+export interface AzureCredentialsType {
+  authType: AzureAuthType;
+  azureCloud?: string;
+  tenantId?: string;
+  clientId?: string;
+  clientSecret?: string | ConcealedSecretType;
+}
+
+export interface MssqlOptions extends SQLOptions {
+  authenticationType?: MSSQLAuthenticationType;
+  encrypt?: MSSQLEncryptOptions;
+  sslRootCertFile?: string;
+  serverName?: string;
+  connectionTimeout?: number;
+  azureCredentials?: AzureCredentialsType;
+}
+
+export interface MssqlSecureOptions {
+  password?: string;
+}
+
+export type AzureAuthJSONDataType = DataSourceJsonData & {
+  azureCredentials: AzureCredentialsType;
+};
+
+export type AzureAuthSecureJSONDataType = {
+  azureClientSecret: undefined | string | ConcealedSecretType;
+};
+
+export type AzureAuthConfigType = {
+  azureAuthIsSupported: boolean;
+  azureAuthSettingsUI: (props: HttpSettingsBaseProps) => JSX.Element;
+};

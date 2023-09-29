@@ -1,5 +1,6 @@
 import { AnnotationEvent, DataFrame } from '../types';
-import { BusEventWithPayload } from './types';
+
+import { BusEventBase, BusEventWithPayload } from './types';
 
 /**
  * When hovering over an element this will identify
@@ -26,7 +27,7 @@ export class DataHoverEvent extends BusEventWithPayload<DataHoverPayload> {
 }
 
 /** @alpha */
-export class DataHoverClearEvent extends BusEventWithPayload<DataHoverPayload> {
+export class DataHoverClearEvent extends BusEventBase {
   static type = 'data-hover-clear';
 }
 
@@ -38,4 +39,28 @@ export class DataSelectEvent extends BusEventWithPayload<DataHoverPayload> {
 /** @alpha */
 export class AnnotationChangeEvent extends BusEventWithPayload<Partial<AnnotationEvent>> {
   static type = 'annotation-event';
+}
+
+// Loaded the first time a dashboard is loaded (not on every render)
+export type DashboardLoadedEventPayload<T> = {
+  dashboardId: string; // eeep, this should be UID
+  orgId?: number;
+  userId?: number;
+  grafanaVersion?: string;
+  queries: Record<string, T[]>;
+};
+
+/** @alpha */
+export class DashboardLoadedEvent<T> extends BusEventWithPayload<DashboardLoadedEventPayload<T>> {
+  static type = 'dashboard-loaded';
+}
+export class DataSourceUpdatedSuccessfully extends BusEventBase {
+  static type = 'datasource-updated-successfully';
+}
+export class DataSourceTestSucceeded extends BusEventBase {
+  static type = 'datasource-test-succeeded';
+}
+
+export class DataSourceTestFailed extends BusEventBase {
+  static type = 'datasource-test-failed';
 }

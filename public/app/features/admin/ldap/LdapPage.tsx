@@ -1,15 +1,13 @@
 import React, { PureComponent } from 'react';
-import { hot } from 'react-hot-loader';
 import { connect, ConnectedProps } from 'react-redux';
-import { NavModel } from '@grafana/data';
+
+import { NavModelItem } from '@grafana/data';
+import { featureEnabled } from '@grafana/runtime';
 import { Alert, Button, LegacyForms } from '@grafana/ui';
 const { FormField } = LegacyForms;
-import { getNavModel } from 'app/core/selectors/navModel';
-import config from 'app/core/config';
-import Page from 'app/core/components/Page/Page';
-import { LdapConnectionStatus } from './LdapConnectionStatus';
-import { LdapSyncInfo } from './LdapSyncInfo';
-import { LdapUserInfo } from './LdapUserInfo';
+import { Page } from 'app/core/components/Page/Page';
+import { contextSrv } from 'app/core/core';
+import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
 import {
   AppNotificationSeverity,
   LdapError,
@@ -19,6 +17,7 @@ import {
   LdapConnectionInfo,
   AccessControlAction,
 } from 'app/types';
+
 import {
   loadLdapState,
   loadLdapSyncStatus,
@@ -26,11 +25,12 @@ import {
   clearUserError,
   clearUserMappingInfo,
 } from '../state/actions';
-import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
-import { contextSrv } from 'app/core/core';
 
-interface OwnProps extends GrafanaRouteComponentProps<{}, { username: string }> {
-  navModel: NavModel;
+import { LdapConnectionStatus } from './LdapConnectionStatus';
+import { LdapSyncInfo } from './LdapSyncInfo';
+import { LdapUserInfo } from './LdapUserInfo';
+
+interface OwnProps extends GrafanaRouteComponentProps<{}, { username?: string }> {
   ldapConnectionInfo: LdapConnectionInfo;
   ldapUser?: LdapUser;
   ldapSyncInfo?: SyncInfo;
@@ -41,6 +41,13 @@ interface OwnProps extends GrafanaRouteComponentProps<{}, { username: string }> 
 interface State {
   isLoading: boolean;
 }
+
+const pageNav: NavModelItem = {
+  text: 'LDAP',
+  subTitle: `Verify your LDAP and user mapping configuration.`,
+  icon: 'book',
+  id: 'LDAP',
+};
 
 export class LdapPage extends PureComponent<Props, State> {
   state = {
@@ -82,12 +89,12 @@ export class LdapPage extends PureComponent<Props, State> {
   };
 
   render() {
-    const { ldapUser, userError, ldapError, ldapSyncInfo, ldapConnectionInfo, navModel, queryParams } = this.props;
+    const { ldapUser, userError, ldapError, ldapSyncInfo, ldapConnectionInfo, queryParams } = this.props;
     const { isLoading } = this.state;
     const canReadLDAPUser = contextSrv.hasPermission(AccessControlAction.LDAPUsersRead);
 
     return (
-      <Page navModel={navModel}>
+      <Page navId="authentication" pageNav={pageNav}>
         <Page.Contents isLoading={isLoading}>
           <>
             {ldapError && ldapError.title && (
@@ -100,7 +107,7 @@ export class LdapPage extends PureComponent<Props, State> {
 
             <LdapConnectionStatus ldapConnectionInfo={ldapConnectionInfo} />
 
-            {config.licenseInfo.hasLicense && ldapSyncInfo && <LdapSyncInfo ldapSyncInfo={ldapSyncInfo} />}
+            {featureEnabled('ldapsync') && ldapSyncInfo && <LdapSyncInfo ldapSyncInfo={ldapSyncInfo} />}
 
             {canReadLDAPUser && (
               <>
@@ -141,7 +148,6 @@ export class LdapPage extends PureComponent<Props, State> {
 }
 
 const mapStateToProps = (state: StoreState) => ({
-  navModel: getNavModel(state.navIndex, 'ldap'),
   ldapConnectionInfo: state.ldap.connectionInfo,
   ldapUser: state.ldap.user,
   ldapSyncInfo: state.ldap.syncInfo,
@@ -160,4 +166,4 @@ const mapDispatchToProps = {
 const connector = connect(mapStateToProps, mapDispatchToProps);
 type Props = OwnProps & ConnectedProps<typeof connector>;
 
-export default hot(module)(connector(LdapPage));
+export default connector(LdapPage);

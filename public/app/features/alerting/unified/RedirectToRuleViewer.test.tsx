@@ -1,71 +1,151 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Provider } from 'react-redux';
-import { Router } from 'react-router-dom';
+import React from 'react';
+import { useLocation } from 'react-use';
+import { TestProvider } from 'test/helpers/TestProvider';
+
 import { DataSourceJsonData, PluginMeta } from '@grafana/data';
 import { locationService } from '@grafana/runtime';
-import { RedirectToRuleViewer } from './RedirectToRuleViewer';
-import { configureStore } from 'app/store/configureStore';
-import { typeAsJestMock } from '../../../../test/helpers/typeAsJestMock';
-import { useCombinedRulesMatching } from './hooks/useCombinedRule';
+
 import { CombinedRule, Rule } from '../../../types/unified-alerting';
 import { PromRuleType } from '../../../types/unified-alerting-dto';
+
+import { RedirectToRuleViewer } from './RedirectToRuleViewer';
+import * as combinedRuleHooks from './hooks/useCombinedRule';
 import { getRulesSourceByName } from './utils/datasource';
 
 jest.mock('./hooks/useCombinedRule');
 jest.mock('./utils/datasource');
 jest.mock('react-router-dom', () => ({
-  ...(jest.requireActual('react-router-dom') as any),
+  ...jest.requireActual('react-router-dom'),
   Redirect: jest.fn(({}) => `Redirected`),
 }));
 
-const store = configureStore();
-const renderRedirectToRuleViewer = () => {
+jest.mock('react-use');
+
+const renderRedirectToRuleViewer = (pathname: string, search?: string) => {
+  jest.mocked(useLocation).mockReturnValue({ pathname, trigger: '', search });
+
+  locationService.push(pathname);
+
   return render(
-    <Provider store={store}>
-      <Router history={locationService.getHistory()}>
-        <RedirectToRuleViewer {...mockRoute('prom alert', 'test prom')} />
-      </Router>
-    </Provider>
+    <TestProvider>
+      <RedirectToRuleViewer />
+    </TestProvider>
   );
 };
 
 const mockRuleSourceByName = () => {
-  typeAsJestMock(getRulesSourceByName).mockReturnValue({
+  jest.mocked(getRulesSourceByName).mockReturnValue({
     name: 'prom test',
     type: 'prometheus',
     uid: 'asdf23',
     id: 1,
     meta: {} as PluginMeta,
     jsonData: {} as DataSourceJsonData,
+    access: 'proxy',
+    readOnly: false,
   });
 };
 
 describe('Redirect to Rule viewer', () => {
   it('should list rules that match the same name', () => {
-    typeAsJestMock(useCombinedRulesMatching).mockReturnValue({
-      result: mockedRules,
+    jest.mocked(combinedRuleHooks.useCloudCombinedRulesMatching).mockReturnValue({
+      rules: mockedRules,
       loading: false,
-      dispatched: true,
-      requestId: 'A',
       error: undefined,
     });
     mockRuleSourceByName();
-    renderRedirectToRuleViewer();
+    renderRedirectToRuleViewer('/alerting/test prom/prom alert/find');
     expect(screen.getAllByText('Cloud test alert')).toHaveLength(2);
   });
 
-  it('should redirect to view rule page if only one match', () => {
-    typeAsJestMock(useCombinedRulesMatching).mockReturnValue({
-      result: [mockedRules[0]],
+  it('should show no rules if empty response', () => {
+    jest.mocked(combinedRuleHooks.useCloudCombinedRulesMatching).mockReturnValue({
+      rules: [],
       loading: false,
-      dispatched: true,
-      requestId: 'A',
       error: undefined,
     });
     mockRuleSourceByName();
-    renderRedirectToRuleViewer();
+    renderRedirectToRuleViewer('/alerting/test prom/prom alert/find');
+    expect(screen.getByTestId('no-rules')).toBeInTheDocument();
+  });
+
+  it('should redirect to view rule page if only one match', () => {
+    jest.mocked(combinedRuleHooks.useCloudCombinedRulesMatching).mockReturnValue({
+      rules: [mockedRules[0]],
+      loading: false,
+      error: undefined,
+    });
+    mockRuleSourceByName();
+    renderRedirectToRuleViewer('/alerting/test prom/prom alert/find');
     expect(screen.getByText('Redirected')).toBeInTheDocument();
+  });
+
+  it('should properly decode rule name', () => {
+    const rulesMatchingSpy = jest.spyOn(combinedRuleHooks, 'useCloudCombinedRulesMatching').mockReturnValue({
+      rules: [mockedRules[0]],
+      loading: false,
+      error: undefined,
+    });
+    mockRuleSourceByName();
+
+    const ruleName = 'cloud rule++ !@#$%^&*()-/?';
+
+    renderRedirectToRuleViewer(`/alerting/prom-db/${encodeURIComponent(ruleName)}/find`);
+
+    expect(rulesMatchingSpy).toHaveBeenCalledWith(ruleName, 'prom-db', { groupName: undefined, namespace: undefined });
+    expect(screen.getByText('Redirected')).toBeInTheDocument();
+  });
+
+  it('should apply additional group name and namespace filters', () => {
+    const rulesMatchingSpy = jest.spyOn(combinedRuleHooks, 'useCloudCombinedRulesMatching').mockReturnValue({
+      rules: [mockedRules[0]],
+      loading: false,
+      error: undefined,
+    });
+    mockRuleSourceByName();
+
+    const ruleName = 'prom alert';
+    const dsName = 'test prom';
+    const group = 'foo';
+    const namespace = 'bar';
+
+    renderRedirectToRuleViewer(`/alerting/${dsName}/${ruleName}/find`, `?group=${group}&namespace=${namespace}`);
+    expect(rulesMatchingSpy).toHaveBeenCalledWith(ruleName, dsName, {
+      groupName: group,
+      namespace: namespace,
+    });
+  });
+
+  it('should properly decode source name', () => {
+    const rulesMatchingSpy = jest.spyOn(combinedRuleHooks, 'useCloudCombinedRulesMatching').mockReturnValue({
+      rules: [mockedRules[0]],
+      loading: false,
+      error: undefined,
+    });
+    mockRuleSourceByName();
+
+    const sourceName = 'prom<|>++ !@#$%^&*()-/?';
+
+    renderRedirectToRuleViewer(`/alerting/${encodeURIComponent(sourceName)}/prom alert/find`);
+
+    expect(rulesMatchingSpy).toHaveBeenCalledWith('prom alert', sourceName, {
+      groupName: undefined,
+      namespace: undefined,
+    });
+    expect(screen.getByText('Redirected')).toBeInTheDocument();
+  });
+
+  it('should show error when datasource does not exist', () => {
+    jest.mocked(getRulesSourceByName).mockReturnValueOnce(undefined);
+    jest.mocked(combinedRuleHooks.useCloudCombinedRulesMatching).mockReturnValue({
+      rules: [],
+      loading: false,
+      error: undefined,
+    });
+
+    renderRedirectToRuleViewer(`/alerting/does-not-exist/prom alert/find`);
+    expect(screen.getByText('Could not find data source with name: does-not-exist.')).toBeInTheDocument();
   });
 });
 
@@ -78,6 +158,7 @@ const mockedRules: CombinedRule[] = [
     group: {
       name: 'test',
       rules: [],
+      totals: {},
     },
     promRule: {
       health: 'ok',
@@ -95,8 +176,12 @@ const mockedRules: CombinedRule[] = [
         id: 1,
         meta: {} as PluginMeta,
         jsonData: {} as DataSourceJsonData,
+        access: 'proxy',
+        readOnly: false,
       },
     },
+    instanceTotals: {},
+    filteredInstanceTotals: {},
   },
   {
     name: 'Cloud test alert',
@@ -106,6 +191,7 @@ const mockedRules: CombinedRule[] = [
     group: {
       name: 'test',
       rules: [],
+      totals: {},
     },
     promRule: {
       health: 'ok',
@@ -123,21 +209,11 @@ const mockedRules: CombinedRule[] = [
         id: 1,
         meta: {} as PluginMeta,
         jsonData: {} as DataSourceJsonData,
+        access: 'proxy',
+        readOnly: false,
       },
     },
+    instanceTotals: {},
+    filteredInstanceTotals: {},
   },
 ];
-
-const mockRoute = (ruleName: string, sourceName: string) => {
-  return {
-    route: {
-      path: '/',
-      component: RedirectToRuleViewer,
-    },
-    queryParams: { returnTo: '/alerting/list' },
-    match: { params: { name: ruleName, sourceName: sourceName }, isExact: false, url: 'asdf', path: '' },
-    history: locationService.getHistory(),
-    location: { pathname: '', hash: '', search: '', state: '' },
-    staticContext: {},
-  };
-};

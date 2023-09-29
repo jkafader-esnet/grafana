@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { Subscription } from 'rxjs';
+
 import {
   DataHoverClearEvent,
   DataHoverEvent,
@@ -8,35 +10,36 @@ import {
   getFieldDisplayValues,
   PanelProps,
 } from '@grafana/data';
-
-import { PieChart } from './PieChart';
-
-import { PieChartLegendOptions, PieChartLegendValues, PieChartOptions } from './types';
-import { Subscription } from 'rxjs';
+import { PanelDataErrorView } from '@grafana/runtime';
+import { HideSeriesConfig, LegendDisplayMode } from '@grafana/schema';
 import {
-  LegendDisplayMode,
+  SeriesVisibilityChangeBehavior,
   usePanelContext,
   useTheme2,
   VizLayout,
   VizLegend,
   VizLegendItem,
-  SeriesVisibilityChangeBehavior,
 } from '@grafana/ui';
+
+import { PieChart } from './PieChart';
+import { PieChartLegendOptions, PieChartLegendValues, Options } from './panelcfg.gen';
+import { filterDisplayItems, sumDisplayItemsReducer } from './utils';
 
 const defaultLegendOptions: PieChartLegendOptions = {
   displayMode: LegendDisplayMode.List,
+  showLegend: true,
   placement: 'right',
   calcs: [],
   values: [PieChartLegendValues.Percent],
 };
 
-interface Props extends PanelProps<PieChartOptions> {}
+interface Props extends PanelProps<Options> {}
 
 /**
  * @beta
  */
 export function PieChartPanel(props: Props) {
-  const { data, timeZone, fieldConfig, replaceVariables, width, height, options } = props;
+  const { data, timeZone, fieldConfig, replaceVariables, width, height, options, id } = props;
 
   const theme = useTheme2();
   const highlightedTitle = useSliceHighlightState();
@@ -48,6 +51,10 @@ export function PieChartPanel(props: Props) {
     replaceVariables,
     timeZone,
   });
+
+  if (!hasFrames(fieldDisplayValues)) {
+    return <PanelDataErrorView panelId={id} fieldConfig={fieldConfig} data={data} />;
+  }
 
   return (
     <VizLayout width={width} height={height} legend={getLegend(props, fieldDisplayValues)}>
@@ -71,26 +78,37 @@ export function PieChartPanel(props: Props) {
 function getLegend(props: Props, displayValues: FieldDisplay[]) {
   const legendOptions = props.options.legend ?? defaultLegendOptions;
 
-  if (legendOptions.displayMode === LegendDisplayMode.Hidden) {
+  if (legendOptions.showLegend === false) {
     return undefined;
   }
-  const total = displayValues
-    .filter((item) => {
-      return !item.field.custom?.hideFrom?.viz;
-    })
-    .reduce((acc, item) => item.display.numeric + acc, 0);
+  const total = displayValues.filter(filterDisplayItems).reduce(sumDisplayItemsReducer, 0);
 
-  const legendItems = displayValues
+  const legendItems: VizLegendItem[] = displayValues
     // Since the pie chart is always sorted, let's sort the legend as well.
-    .sort((a, b) => b.display.numeric - a.display.numeric)
-    .map<VizLegendItem>((value, idx) => {
-      const hidden = value.field.custom.hideFrom.viz;
+    .sort((a, b) => {
+      if (isNaN(a.display.numeric)) {
+        return 1;
+      } else if (isNaN(b.display.numeric)) {
+        return -1;
+      } else {
+        return b.display.numeric - a.display.numeric;
+      }
+    })
+    .map<VizLegendItem | undefined>((value: FieldDisplay, idx: number) => {
+      const hideFrom: HideSeriesConfig = value.field.custom?.hideFrom ?? {};
+
+      if (hideFrom.legend) {
+        return undefined;
+      }
+
+      const hideFromViz = Boolean(hideFrom.viz);
+
       const display = value.display;
       return {
         label: display.title ?? '',
         color: display.color ?? FALLBACK_COLOR,
         yAxis: 1,
-        disabled: hidden,
+        disabled: hideFromViz,
         getItemKey: () => (display.title ?? '') + idx,
         getDisplayValues: () => {
           const valuesToShow = legendOptions.values ?? [];
@@ -101,30 +119,40 @@ function getLegend(props: Props, displayValues: FieldDisplay[]) {
           }
 
           if (valuesToShow.includes(PieChartLegendValues.Percent)) {
-            const fractionOfTotal = hidden ? 0 : display.numeric / total;
+            const fractionOfTotal = hideFromViz ? 0 : display.numeric / total;
             const percentOfTotal = fractionOfTotal * 100;
 
             displayValues.push({
               numeric: fractionOfTotal,
               percent: percentOfTotal,
-              text: hidden ? '-' : percentOfTotal.toFixed(0) + '%',
-              title: valuesToShow.length > 1 ? 'Percent' : undefined,
+              text:
+                hideFromViz || isNaN(fractionOfTotal)
+                  ? props.fieldConfig.defaults.noValue ?? '-'
+                  : percentOfTotal.toFixed(value.field.decimals ?? 0) + '%',
+              title: valuesToShow.length > 1 ? 'Percent' : '',
             });
           }
 
           return displayValues;
         },
       };
-    });
+    })
+    .filter((i): i is VizLegendItem => !!i);
 
   return (
-    <VizLegend
-      items={legendItems}
-      seriesVisibilityChangeBehavior={SeriesVisibilityChangeBehavior.Hide}
-      placement={legendOptions.placement}
-      displayMode={legendOptions.displayMode}
-    />
+    <VizLayout.Legend placement={legendOptions.placement} width={legendOptions.width}>
+      <VizLegend
+        items={legendItems}
+        seriesVisibilityChangeBehavior={SeriesVisibilityChangeBehavior.Hide}
+        placement={legendOptions.placement}
+        displayMode={legendOptions.displayMode}
+      />
+    </VizLayout.Legend>
   );
+}
+
+function hasFrames(fieldDisplayValues: FieldDisplay[]) {
+  return fieldDisplayValues.some((fd) => fd.view?.dataFrame.length);
 }
 
 function useSliceHighlightState() {
@@ -140,9 +168,9 @@ function useSliceHighlightState() {
       setHighlightedTitle(undefined);
     };
 
-    const subs = new Subscription()
-      .add(eventBus.getStream(DataHoverEvent).subscribe({ next: setHighlightedSlice }))
-      .add(eventBus.getStream(DataHoverClearEvent).subscribe({ next: resetHighlightedSlice }));
+    const subs = new Subscription();
+    subs.add(eventBus.getStream(DataHoverEvent).subscribe({ next: setHighlightedSlice }));
+    subs.add(eventBus.getStream(DataHoverClearEvent).subscribe({ next: resetHighlightedSlice }));
 
     return () => {
       subs.unsubscribe();

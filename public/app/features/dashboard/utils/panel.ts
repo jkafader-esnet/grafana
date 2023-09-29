@@ -1,33 +1,28 @@
-// Store
-import store from 'app/core/store';
-
-// Models
-import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
-import { PanelModel } from 'app/features/dashboard/state/PanelModel';
-import { TimeRange, AppEvents, rangeUtil, dateMath } from '@grafana/data';
-
-// Utils
 import { isString as _isString } from 'lodash';
+
+import { TimeRange, AppEvents, rangeUtil, dateMath, PanelModel as IPanelModel, dateTimeAsMoment } from '@grafana/data';
+import { getTemplateSrv } from '@grafana/runtime';
 import appEvents from 'app/core/app_events';
 import config from 'app/core/config';
-
-// Services
-import { getTemplateSrv } from '@grafana/runtime';
-
-// Constants
 import { LS_PANEL_COPY_KEY, PANEL_BORDER } from 'app/core/constants';
-
+import store from 'app/core/store';
 import { ShareModal } from 'app/features/dashboard/components/ShareModal';
-import { ShowConfirmModalEvent, ShowModalReactEvent } from '../../../types/events';
+import { DashboardModel } from 'app/features/dashboard/state/DashboardModel';
+import { PanelModel } from 'app/features/dashboard/state/PanelModel';
 import { AddLibraryPanelModal } from 'app/features/library-panels/components/AddLibraryPanelModal/AddLibraryPanelModal';
 import { UnlinkModal } from 'app/features/library-panels/components/UnlinkModal/UnlinkModal';
+import { cleanUpPanelState } from 'app/features/panel/state/actions';
+import { dispatch } from 'app/store/store';
+
+import { ShowConfirmModalEvent, ShowModalReactEvent } from '../../../types/events';
 
 export const removePanel = (dashboard: DashboardModel, panel: PanelModel, ask: boolean) => {
   // confirm deletion
   if (ask !== false) {
-    const text2 = panel.alert
-      ? 'Panel includes an alert rule. removing the panel will also remove the alert rule'
-      : undefined;
+    const text2 =
+      panel.alert && !config.unifiedAlertingEnabled
+        ? 'Panel includes an alert rule. removing the panel will also remove the alert rule'
+        : undefined;
     const confirmText = panel.alert ? 'YES' : undefined;
 
     appEvents.publish(
@@ -45,13 +40,14 @@ export const removePanel = (dashboard: DashboardModel, panel: PanelModel, ask: b
   }
 
   dashboard.removePanel(panel);
+  dispatch(cleanUpPanelState(panel.key));
 };
 
 export const duplicatePanel = (dashboard: DashboardModel, panel: PanelModel) => {
   dashboard.duplicatePanel(panel);
 };
 
-export const copyPanel = (panel: PanelModel) => {
+export const copyPanel = (panel: IPanelModel) => {
   let saveModel = panel;
   if (panel instanceof PanelModel) {
     saveModel = panel.getSaveModel();
@@ -79,7 +75,7 @@ export const addLibraryPanel = (dashboard: DashboardModel, panel: PanelModel) =>
       component: AddLibraryPanelModal,
       props: {
         panel,
-        initialFolderId: dashboard.meta.folderId,
+        initialFolderUid: dashboard.meta.folderUid,
         isOpen: true,
       },
     })
@@ -91,10 +87,7 @@ export const unlinkLibraryPanel = (panel: PanelModel) => {
     new ShowModalReactEvent({
       component: UnlinkModal,
       props: {
-        onConfirm: () => {
-          delete panel.libraryPanel;
-          panel.render();
-        },
+        onConfirm: () => panel.unlinkLibraryPanel(),
         isOpen: true,
       },
     })
@@ -106,10 +99,11 @@ export const refreshPanel = (panel: PanelModel) => {
 };
 
 export const toggleLegend = (panel: PanelModel) => {
-  console.warn('Toggle legend is not implemented yet');
-  // We need to set panel.legend defaults first
-  // panel.legend.show = !panel.legend.show;
-  refreshPanel(panel);
+  const newOptions = { ...panel.options };
+  newOptions.legend.showLegend === true
+    ? (newOptions.legend.showLegend = false)
+    : (newOptions.legend.showLegend = true);
+  panel.updateOptions(newOptions);
 };
 
 export interface TimeOverrideResult {
@@ -132,11 +126,13 @@ export function applyPanelTimeOverrides(panel: PanelModel, timeRange: TimeRange)
     }
 
     if (_isString(timeRange.raw.from)) {
-      const timeFromDate = dateMath.parse(timeFromInfo.from)!;
+      const fromTimezone = dateTimeAsMoment(timeRange.from).tz();
+      const toTimezone = dateTimeAsMoment(timeRange.to).tz();
+      const timeFromDate = dateMath.parse(timeFromInfo.from, undefined, fromTimezone)!;
       newTimeData.timeInfo = timeFromInfo.display;
       newTimeData.timeRange = {
         from: timeFromDate,
-        to: dateMath.parse(timeFromInfo.to)!,
+        to: dateMath.parse(timeFromInfo.to, undefined, toTimezone)!,
         raw: {
           from: timeFromInfo.from,
           to: timeFromInfo.to,
@@ -186,4 +182,16 @@ export function calculateInnerPanelHeight(panel: PanelModel, containerHeight: nu
   const chromePadding = panel.plugin && panel.plugin.noPadding ? 0 : config.theme.panelPadding * 2;
   const headerHeight = panel.hasTitle() ? config.theme.panelHeaderHeight : 0;
   return containerHeight - headerHeight - chromePadding - PANEL_BORDER;
+}
+
+export function calculateNewPanelGridPos(dashboard: DashboardModel): PanelModel['gridPos'] {
+  // Move all panels down by the height of the "add panel" widget.
+  // This is to work around an issue with react-grid-layout that can mess up the layout
+  // in certain configurations. (See https://github.com/react-grid-layout/react-grid-layout/issues/1787)
+  const addPanelWidgetHeight = 8;
+  for (const panel of dashboard.panelIterator()) {
+    panel.gridPos.y += addPanelWidgetHeight;
+  }
+
+  return { x: 0, y: 0, w: 12, h: addPanelWidgetHeight };
 }

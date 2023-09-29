@@ -1,20 +1,21 @@
 import React, { PureComponent } from 'react';
 import { connect, ConnectedProps } from 'react-redux';
+
+import { SelectableValue } from '@grafana/data';
+import { Button, FilterInput, Label, InlineField } from '@grafana/ui';
 import { SlideDown } from 'app/core/components/Animations/SlideDown';
+import { CloseButton } from 'app/core/components/CloseButton/CloseButton';
 import { UserPicker } from 'app/core/components/Select/UserPicker';
 import { TagBadge } from 'app/core/components/TagFilter/TagBadge';
-import { TeamMember, OrgUser } from 'app/types';
-import { addTeamMember } from './state/actions';
-import { getSearchMemberQuery, isSignedInUserTeamAdmin } from './state/selectors';
-import { FilterInput } from 'app/core/components/FilterInput/FilterInput';
 import { WithFeatureToggle } from 'app/core/components/WithFeatureToggle';
 import { config } from 'app/core/config';
 import { contextSrv } from 'app/core/services/context_srv';
+import { TeamMember, OrgUser } from 'app/types';
+
 import TeamMemberRow from './TeamMemberRow';
+import { addTeamMember } from './state/actions';
 import { setSearchMemberQuery } from './state/reducers';
-import { CloseButton } from 'app/core/components/CloseButton/CloseButton';
-import { Button } from '@grafana/ui';
-import { SelectableValue } from '@grafana/data';
+import { getSearchMemberQuery, isSignedInUserTeamAdmin } from './state/selectors';
 
 function mapStateToProps(state: any) {
   return {
@@ -74,7 +75,7 @@ export class TeamMembers extends PureComponent<Props, State> {
     return (
       <td>
         {labels.map((label) => (
-          <TagBadge key={label} label={label} removeIcon={false} count={0} onClick={() => {}} />
+          <TagBadge key={label} label={label} removeIcon={false} count={0} />
         ))}
       </td>
     );
@@ -88,9 +89,9 @@ export class TeamMembers extends PureComponent<Props, State> {
     return (
       <div>
         <div className="page-action-bar">
-          <div className="gf-form gf-form--grow">
+          <InlineField grow>
             <FilterInput placeholder="Search members" value={searchMemberQuery} onChange={this.onSearchQueryChange} />
-          </div>
+          </InlineField>
           <Button className="pull-right" onClick={this.onToggleAdding} disabled={isAdding || !isTeamAdmin}>
             Add member
           </Button>
@@ -98,10 +99,10 @@ export class TeamMembers extends PureComponent<Props, State> {
 
         <SlideDown in={isAdding}>
           <div className="cta-form">
-            <CloseButton onClick={this.onToggleAdding} />
-            <h5>Add team member</h5>
+            <CloseButton aria-label="Close 'Add team member' dialogue" onClick={this.onToggleAdding} />
+            <Label htmlFor="user-picker">Add team member</Label>
             <div className="gf-form-inline">
-              <UserPicker onSelected={this.onUserSelected} className="min-width-30" />
+              <UserPicker inputId="user-picker" onSelected={this.onUserSelected} className="min-width-30" />
               {this.state.newTeamMember && (
                 <Button type="submit" onClick={this.onAddUserToTeam}>
                   Add to team

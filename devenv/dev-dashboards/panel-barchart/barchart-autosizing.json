@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -19,12 +22,17 @@
     ]
   },
   "editable": true,
-  "gnetId": null,
+  "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 75,
   "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -37,20 +45,21 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -69,6 +78,7 @@
       },
       "id": 9,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.82,
         "legend": {
@@ -80,14 +90,18 @@
         },
         "orientation": "auto",
         "showValue": "auto",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
-          "csvContent": "Name,Stat1,Stat2\nStockholm, 10, 15\nNew York, 19, 5\nLondon, 10, 1\nNegative, 15, -5\nLong value, 15,10",
+          "csvContent": "Time,Name,Stat1,Stat2\n2020-01-01T00:00:00Z,Stockholm, 10, 15\n2020-01-01T00:00:00Z,New York, 19, 5\n2020-01-01T00:00:00Z,London, 10, 1\n2020-01-01T00:00:00Z,Negative, 15, -5\n2020-01-01T00:00:00Z,Long value, 15,10",
           "refId": "A",
           "scenarioId": "csv_content"
         }
@@ -96,7 +110,10 @@
       "type": "barchart"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "description": "Should be smaller given the longer value",
       "fieldConfig": {
         "defaults": {
@@ -110,12 +127,14 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "decimals": 2,
           "mappings": [],
@@ -123,8 +142,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -143,6 +161,7 @@
       },
       "id": 15,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.82,
         "legend": {
@@ -154,10 +173,14 @@
         },
         "orientation": "auto",
         "showValue": "auto",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -170,7 +193,10 @@
       "type": "barchart"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -183,20 +209,21 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -215,6 +242,7 @@
       },
       "id": 16,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.89,
         "legend": {
@@ -226,10 +254,14 @@
         },
         "orientation": "auto",
         "showValue": "auto",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -242,7 +274,10 @@
       "type": "barchart"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -255,20 +290,21 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -287,6 +323,7 @@
       },
       "id": 17,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.89,
         "legend": {
@@ -298,10 +335,14 @@
         },
         "orientation": "auto",
         "showValue": "always",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -314,7 +355,10 @@
       "type": "barchart"
     },
     {
-      "datasource": "-- Dashboard --",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Dashboard --"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -327,20 +371,21 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -359,6 +404,7 @@
       },
       "id": 10,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 1,
         "legend": {
@@ -368,13 +414,17 @@
         },
         "orientation": "auto",
         "showValue": "auto",
+        "stacking": "none",
         "text": {
-          "size": 10,
+          "titleSize": 10,
           "valueSize": 25
         },
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -386,7 +436,10 @@
       "type": "barchart"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -399,12 +452,14 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "decimals": 7,
           "mappings": [],
@@ -412,8 +467,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -432,6 +486,7 @@
       },
       "id": 18,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.82,
         "legend": {
@@ -443,10 +498,14 @@
         },
         "orientation": "horizontal",
         "showValue": "auto",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -459,7 +518,10 @@
       "type": "barchart"
     },
     {
-      "datasource": null,
+      "datasource": {
+        "type": "testdata",
+        "uid": "PD8C576611E62080A"
+      },
       "description": "",
       "fieldConfig": {
         "defaults": {
@@ -473,20 +535,21 @@
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
-              "graph": false,
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineWidth": 0
+            "lineWidth": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -505,6 +568,7 @@
       },
       "id": 19,
       "options": {
+        "barRadius": 0,
         "barWidth": 1,
         "groupWidth": 0.89,
         "legend": {
@@ -516,10 +580,14 @@
         },
         "orientation": "horizontal",
         "showValue": "auto",
+        "stacking": "none",
         "text": {},
         "tooltip": {
-          "mode": "single"
-        }
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
       "targets": [
         {
@@ -533,12 +601,12 @@
     }
   ],
   "refresh": "",
-  "schemaVersion": 30,
-  "style": "dark",
+  "schemaVersion": 36,
   "tags": [
     "gdev",
     "panel-tests",
-    "barchart"
+    "barchart",
+    "graph-ng"
   ],
   "templating": {
     "list": []
@@ -551,5 +619,6 @@
   "timezone": "",
   "title": "BarChart - Panel Tests - Value sizing",
   "uid": "WFlOM-jM1",
-  "version": 9
+  "version": 6,
+  "weekStart": ""
 }

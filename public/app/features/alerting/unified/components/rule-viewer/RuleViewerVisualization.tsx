@@ -1,123 +1,124 @@
-import React, { useState } from 'react';
 import { css } from '@emotion/css';
-import { DataSourceInstanceSettings, GrafanaTheme2, PanelData, urlUtil } from '@grafana/data';
-import { getDataSourceSrv, PanelRenderer } from '@grafana/runtime';
-import { Alert, CodeEditor, LinkButton, useStyles2, useTheme2 } from '@grafana/ui';
-import { isExpressionQuery } from 'app/features/expressions/guards';
-import { PanelOptions } from 'app/plugins/panel/table/models.gen';
-import { AlertQuery } from 'app/types/unified-alerting-dto';
-import AutoSizer from 'react-virtualized-auto-sizer';
-import { PanelPluginsButtonGroup, SupportedPanelPlugins } from '../PanelPluginsButtonGroup';
-import { TABLE, TIMESERIES } from '../../utils/constants';
+import React, { useCallback } from 'react';
 
-type RuleViewerVisualizationProps = {
+import {
+  DataSourceInstanceSettings,
+  DataSourceJsonData,
+  DateTime,
+  dateTime,
+  GrafanaTheme2,
+  PanelData,
+  RelativeTimeRange,
+  urlUtil,
+} from '@grafana/data';
+import { config } from '@grafana/runtime';
+import { DataSourceRef } from '@grafana/schema';
+import { DateTimePicker, LinkButton, useStyles2 } from '@grafana/ui';
+import { contextSrv } from 'app/core/core';
+import { isExpressionQuery } from 'app/features/expressions/guards';
+import { AlertDataQuery, AlertQuery } from 'app/types/unified-alerting-dto';
+
+import { VizWrapper } from '../rule-editor/VizWrapper';
+import { ThresholdDefinition } from '../rule-editor/util';
+
+interface RuleViewerVisualizationProps extends Pick<AlertQuery, 'refId' | 'model' | 'relativeTimeRange'> {
+  dsSettings: DataSourceInstanceSettings<DataSourceJsonData>;
   data?: PanelData;
-  query: AlertQuery;
-};
+  thresholds?: ThresholdDefinition;
+  onTimeRangeChange: (range: RelativeTimeRange) => void;
+  className?: string;
+}
 
 const headerHeight = 4;
 
-export function RuleViewerVisualization(props: RuleViewerVisualizationProps): JSX.Element | null {
-  const theme = useTheme2();
+export function RuleViewerVisualization({
+  data,
+  model,
+  thresholds,
+  dsSettings,
+  relativeTimeRange,
+  onTimeRangeChange,
+  className,
+}: RuleViewerVisualizationProps): JSX.Element | null {
   const styles = useStyles2(getStyles);
-  const { data, query } = props;
-  const defaultPanel = isExpressionQuery(query.model) ? TABLE : TIMESERIES;
-  const [panel, setPanel] = useState<SupportedPanelPlugins>(defaultPanel);
-  const dsSettings = getDataSourceSrv().getInstanceSettings(query.datasourceUid);
-  const [options, setOptions] = useState<PanelOptions>({
-    frameIndex: 0,
-    showHeader: true,
-  });
+  const isExpression = isExpressionQuery(model);
+
+  const onTimeChange = useCallback(
+    (newDateTime: DateTime) => {
+      const now = dateTime().unix() - newDateTime.unix();
+
+      if (relativeTimeRange) {
+        const interval = relativeTimeRange.from - relativeTimeRange.to;
+        onTimeRangeChange({ from: now + interval, to: now });
+      }
+    },
+    [onTimeRangeChange, relativeTimeRange]
+  );
+
+  const setDateTime = useCallback((relativeTimeRangeTo: number) => {
+    return relativeTimeRangeTo === 0 ? dateTime() : dateTime().subtract(relativeTimeRangeTo, 'seconds');
+  }, []);
 
   if (!data) {
     return null;
   }
 
-  if (!dsSettings) {
-    return (
-      <div className={styles.content}>
-        <Alert title="Could not find datasource for query" />
-        <CodeEditor
-          width="100%"
-          height="250px"
-          language="json"
-          showLineNumbers={false}
-          showMiniMap={false}
-          value={JSON.stringify(query, null, '\t')}
-          readOnly={true}
-        />
-      </div>
-    );
-  }
+  const allowedToExploreDataSources = contextSrv.hasAccessToExplore();
 
   return (
-    <div className={styles.content}>
-      <AutoSizer>
-        {({ width, height }) => {
-          return (
-            <div style={{ width, height }}>
-              <div className={styles.header}>
-                <div>
-                  {`Query ${query.refId}`}
-                  <span className={styles.dataSource}>({dsSettings.name})</span>
-                </div>
-                <div className={styles.actions}>
-                  <PanelPluginsButtonGroup onChange={setPanel} value={panel} size="sm" />
-                  {!isExpressionQuery(query.model) && (
-                    <>
-                      <div className={styles.spacing} />
-                      <LinkButton
-                        size="sm"
-                        variant="secondary"
-                        icon="compass"
-                        target="_blank"
-                        href={createExploreLink(dsSettings, query)}
-                      >
-                        View in Explore
-                      </LinkButton>
-                    </>
-                  )}
-                </div>
-              </div>
-              <PanelRenderer
-                height={height - theme.spacing.gridSize * headerHeight}
-                width={width}
-                data={data}
-                pluginId={panel}
-                title=""
-                onOptionsChange={setOptions}
-                options={options}
-              />
-            </div>
-          );
-        }}
-      </AutoSizer>
+    <div className={className}>
+      <div className={styles.header}>
+        <div className={styles.actions}>
+          {!isExpression && relativeTimeRange ? (
+            <DateTimePicker date={setDateTime(relativeTimeRange.to)} onChange={onTimeChange} maxDate={new Date()} />
+          ) : null}
+
+          {allowedToExploreDataSources && !isExpression && (
+            <LinkButton
+              size="md"
+              variant="secondary"
+              icon="compass"
+              target="_blank"
+              href={createExploreLink(dsSettings, model)}
+            >
+              View in Explore
+            </LinkButton>
+          )}
+        </div>
+      </div>
+      <VizWrapper data={data} thresholds={thresholds?.config} thresholdsType={thresholds?.mode} />
     </div>
   );
 }
 
-function createExploreLink(settings: DataSourceInstanceSettings, query: AlertQuery): string {
-  const { name } = settings;
-  const { refId, ...rest } = query.model;
-  const queryParams = { ...rest, datasource: name };
+function createExploreLink(settings: DataSourceRef, model: AlertDataQuery): string {
+  const { uid, type } = settings;
+  const { refId, ...rest } = model;
 
-  return urlUtil.renderUrl('/explore', {
-    left: JSON.stringify(['now-1h', 'now', name, queryParams]),
+  /*
+    In my testing I've found some alerts that don't have a data source embedded inside the model.
+    At this moment in time it is unclear to me why some alert definitions not have a data source embedded in the model.
+
+    I don't think that should happen here, the fact that the datasource ref is sometimes missing here is a symptom of another cause. (Gilles)
+   */
+  return urlUtil.renderUrl(`${config.appSubUrl}/explore`, {
+    left: JSON.stringify({
+      datasource: settings.uid,
+      queries: [{ refId: 'A', ...rest, datasource: { type, uid } }],
+      range: { from: 'now-1h', to: 'now' },
+    }),
   });
 }
 
 const getStyles = (theme: GrafanaTheme2) => {
   return {
-    content: css`
-      width: 100%;
-      height: 250px;
-    `,
     header: css`
       height: ${theme.spacing(headerHeight)};
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       white-space: nowrap;
+      margin-bottom: ${theme.spacing(2)};
     `,
     refId: css`
       font-weight: ${theme.typography.fontWeightMedium};
@@ -132,9 +133,6 @@ const getStyles = (theme: GrafanaTheme2) => {
     actions: css`
       display: flex;
       align-items: center;
-    `,
-    spacing: css`
-      padding: ${theme.spacing(0, 1, 0, 0)};
     `,
     errorMessage: css`
       white-space: pre-wrap;

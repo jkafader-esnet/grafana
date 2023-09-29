@@ -1,16 +1,20 @@
-import React from 'react';
 import { css } from '@emotion/css';
+import React from 'react';
 
 import { dateTimeFormatTimeAgo, GrafanaTheme2 } from '@grafana/data';
 import { useStyles2 } from '@grafana/ui';
+
+import { getLatestCompatibleVersion } from '../helpers';
 import { Version } from '../types';
 
 interface Props {
-  versions: Version[];
+  versions?: Version[];
+  installedVersion?: string;
 }
 
-export const VersionList = ({ versions }: Props) => {
+export const VersionList = ({ versions = [], installedVersion }: Props) => {
   const styles = useStyles2(getStyles);
+  const latestCompatibleVersion = getLatestCompatibleVersion(versions);
 
   if (versions.length === 0) {
     return <p>No version history was found.</p>;
@@ -22,14 +26,29 @@ export const VersionList = ({ versions }: Props) => {
         <tr>
           <th>Version</th>
           <th>Last updated</th>
+          <th>Grafana Dependency</th>
         </tr>
       </thead>
       <tbody>
         {versions.map((version) => {
+          const isInstalledVersion = installedVersion === version.version;
           return (
             <tr key={version.version}>
-              <td>{version.version}</td>
-              <td>{dateTimeFormatTimeAgo(version.createdAt)}</td>
+              {/* Version number */}
+              {isInstalledVersion ? (
+                <td className={styles.currentVersion}>{version.version} (installed version)</td>
+              ) : version.version === latestCompatibleVersion?.version ? (
+                <td>{version.version} (latest compatible version)</td>
+              ) : (
+                <td>{version.version}</td>
+              )}
+
+              {/* Last updated */}
+              <td className={isInstalledVersion ? styles.currentVersion : ''}>
+                {dateTimeFormatTimeAgo(version.createdAt)}
+              </td>
+              {/* Dependency */}
+              <td className={isInstalledVersion ? styles.currentVersion : ''}>{version.grafanaDependency || 'N/A'}</td>
             </tr>
           );
         })}
@@ -43,6 +62,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     padding: ${theme.spacing(2, 4, 3)};
   `,
   table: css`
+    table-layout: fixed;
     width: 100%;
     td,
     th {
@@ -51,5 +71,8 @@ const getStyles = (theme: GrafanaTheme2) => ({
     th {
       font-size: ${theme.typography.h5.fontSize};
     }
+  `,
+  currentVersion: css`
+    font-weight: ${theme.typography.fontWeightBold};
   `,
 });

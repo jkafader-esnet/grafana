@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana/pkg/infra/log"
+
+	"github.com/grafana/grafana/pkg/plugins"
 	"github.com/grafana/grafana/pkg/plugins/backendplugin"
+	"github.com/grafana/grafana/pkg/plugins/log"
 )
 
 // corePlugin represents a plugin that's part of Grafana core.
@@ -20,7 +22,7 @@ type corePlugin struct {
 
 // New returns a new backendplugin.PluginFactoryFunc for creating a core (built-in) backendplugin.Plugin.
 func New(opts backend.ServeOpts) backendplugin.PluginFactoryFunc {
-	return func(pluginID string, logger log.Logger, env []string) (backendplugin.Plugin, error) {
+	return func(pluginID string, logger log.Logger, _ func() []string) (backendplugin.Plugin, error) {
 		return &corePlugin{
 			pluginID:            pluginID,
 			logger:              logger,
@@ -64,8 +66,12 @@ func (cp *corePlugin) IsDecommissioned() bool {
 	return false
 }
 
-func (cp *corePlugin) CollectMetrics(ctx context.Context) (*backend.CollectMetricsResult, error) {
-	return nil, backendplugin.ErrMethodNotImplemented
+func (cp *corePlugin) Target() backendplugin.Target {
+	return backendplugin.TargetInMemory
+}
+
+func (cp *corePlugin) CollectMetrics(_ context.Context, _ *backend.CollectMetricsRequest) (*backend.CollectMetricsResult, error) {
+	return nil, plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
@@ -73,7 +79,7 @@ func (cp *corePlugin) CheckHealth(ctx context.Context, req *backend.CheckHealthR
 		return cp.CheckHealthHandler.CheckHealth(ctx, req)
 	}
 
-	return nil, backendplugin.ErrMethodNotImplemented
+	return nil, plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
@@ -81,7 +87,7 @@ func (cp *corePlugin) QueryData(ctx context.Context, req *backend.QueryDataReque
 		return cp.QueryDataHandler.QueryData(ctx, req)
 	}
 
-	return nil, backendplugin.ErrMethodNotImplemented
+	return nil, plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
@@ -89,26 +95,26 @@ func (cp *corePlugin) CallResource(ctx context.Context, req *backend.CallResourc
 		return cp.CallResourceHandler.CallResource(ctx, req, sender)
 	}
 
-	return backendplugin.ErrMethodNotImplemented
+	return plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) SubscribeStream(ctx context.Context, req *backend.SubscribeStreamRequest) (*backend.SubscribeStreamResponse, error) {
 	if cp.StreamHandler != nil {
 		return cp.StreamHandler.SubscribeStream(ctx, req)
 	}
-	return nil, backendplugin.ErrMethodNotImplemented
+	return nil, plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) PublishStream(ctx context.Context, req *backend.PublishStreamRequest) (*backend.PublishStreamResponse, error) {
 	if cp.StreamHandler != nil {
 		return cp.StreamHandler.PublishStream(ctx, req)
 	}
-	return nil, backendplugin.ErrMethodNotImplemented
+	return nil, plugins.ErrMethodNotImplemented
 }
 
 func (cp *corePlugin) RunStream(ctx context.Context, req *backend.RunStreamRequest, sender *backend.StreamSender) error {
 	if cp.StreamHandler != nil {
 		return cp.StreamHandler.RunStream(ctx, req, sender)
 	}
-	return backendplugin.ErrMethodNotImplemented
+	return plugins.ErrMethodNotImplemented
 }

@@ -1,65 +1,83 @@
-import React from 'react';
-import { render, RenderResult } from '@testing-library/react';
-import { PromQueryEditorByApp } from './PromQueryEditorByApp';
-import { CoreApp } from '@grafana/data';
+import { render, screen } from '@testing-library/react';
 import { noop } from 'lodash';
-import { Observable } from 'rxjs';
-import { first } from 'rxjs/operators';
-import { PrometheusDatasource } from '../datasource';
-import { testIds as alertingTestIds } from './PromQueryEditorForAlerting';
-import { testIds as regularTestIds } from './PromQueryEditor';
+import React from 'react';
 
-function setup(app: CoreApp): RenderResult {
-  const dataSource = ({
+import { CoreApp } from '@grafana/data';
+
+import { PrometheusDatasource } from '../datasource';
+
+import { PromQueryEditorByApp } from './PromQueryEditorByApp';
+import { testIds as alertingTestIds } from './PromQueryEditorForAlerting';
+import { Props } from './monaco-query-field/MonacoQueryFieldProps';
+
+// the monaco-based editor uses lazy-loading and that does not work
+// well with this test, and we do not need the monaco-related
+// functionality in this test anyway, so we mock it out.
+jest.mock('./monaco-query-field/MonacoQueryFieldLazy', () => {
+  const fakeQueryField = (props: Props) => {
+    return <input onBlur={(e) => props.onBlur(e.currentTarget.value)} data-testid={'dummy-code-input'} type={'text'} />;
+  };
+  return {
+    MonacoQueryFieldLazy: fakeQueryField,
+  };
+});
+
+function setup(app: CoreApp): { onRunQuery: jest.Mock } {
+  const dataSource = {
     createQuery: jest.fn((q) => q),
     getInitHints: () => [],
     getPrometheusTime: jest.fn((date, roundup) => 123),
+    getQueryHints: jest.fn(() => []),
+    getDebounceTimeInMilliseconds: jest.fn(() => 300),
     languageProvider: {
       start: () => Promise.resolve([]),
       syntax: () => {},
       getLabelKeys: () => [],
       metrics: [],
     },
-    exemplarErrors: new Observable().pipe(first()),
-  } as unknown) as PrometheusDatasource;
+  } as unknown as PrometheusDatasource;
+  const onRunQuery = jest.fn();
 
-  return render(
+  render(
     <PromQueryEditorByApp
       app={app}
       onChange={noop}
-      onRunQuery={noop}
+      onRunQuery={onRunQuery}
       datasource={dataSource}
       query={{ refId: 'A', expr: '' }}
     />
   );
+
+  return {
+    onRunQuery,
+  };
 }
 
 describe('PromQueryEditorByApp', () => {
-  it('should render simplified query editor for cloud alerting', () => {
-    const { getByTestId, queryByTestId } = setup(CoreApp.CloudAlerting);
+  it('should render simplified query editor for cloud alerting', async () => {
+    setup(CoreApp.CloudAlerting);
 
-    expect(getByTestId(alertingTestIds.editor)).toBeInTheDocument();
-    expect(queryByTestId(regularTestIds.editor)).toBeNull();
+    expect(await screen.findByTestId(alertingTestIds.editor)).toBeInTheDocument();
   });
 
-  it('should render regular query editor for unkown apps', () => {
-    const { getByTestId, queryByTestId } = setup(CoreApp.Unknown);
+  it('should render editor selector for unkown apps', () => {
+    setup(CoreApp.Unknown);
 
-    expect(getByTestId(regularTestIds.editor)).toBeInTheDocument();
-    expect(queryByTestId(alertingTestIds.editor)).toBeNull();
+    expect(screen.getByTestId('QueryEditorModeToggle')).toBeInTheDocument();
+    expect(screen.queryByTestId(alertingTestIds.editor)).toBeNull();
   });
 
-  it('should render regular query editor for explore', () => {
-    const { getByTestId, queryByTestId } = setup(CoreApp.Explore);
+  it('should render editor selector for explore', () => {
+    setup(CoreApp.Explore);
 
-    expect(getByTestId(regularTestIds.editor)).toBeInTheDocument();
-    expect(queryByTestId(alertingTestIds.editor)).toBeNull();
+    expect(screen.getByTestId('QueryEditorModeToggle')).toBeInTheDocument();
+    expect(screen.queryByTestId(alertingTestIds.editor)).toBeNull();
   });
 
-  it('should render regular query editor for dashboard', () => {
-    const { getByTestId, queryByTestId } = setup(CoreApp.Dashboard);
+  it('should render editor selector for dashboard', () => {
+    setup(CoreApp.Dashboard);
 
-    expect(getByTestId(regularTestIds.editor)).toBeInTheDocument();
-    expect(queryByTestId(alertingTestIds.editor)).toBeNull();
+    expect(screen.getByTestId('QueryEditorModeToggle')).toBeInTheDocument();
+    expect(screen.queryByTestId(alertingTestIds.editor)).toBeNull();
   });
 });

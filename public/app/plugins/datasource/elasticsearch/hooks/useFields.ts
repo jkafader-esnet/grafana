@@ -1,13 +1,11 @@
+import { lastValueFrom } from 'rxjs';
+
 import { MetricFindValue, SelectableValue } from '@grafana/data';
-import {
-  BucketAggregationType,
-  isBucketAggregationType,
-} from '../components/QueryEditor/BucketAggregationsEditor/aggregations';
+
+import { isBucketAggregationType } from '../components/QueryEditor/BucketAggregationsEditor/aggregations';
 import { useDatasource, useRange } from '../components/QueryEditor/ElasticsearchQueryContext';
-import {
-  isMetricAggregationType,
-  MetricAggregationType,
-} from '../components/QueryEditor/MetricAggregationsEditor/aggregations';
+import { isMetricAggregationType } from '../components/QueryEditor/MetricAggregationsEditor/aggregations';
+import { MetricAggregationType, BucketAggregationType } from '../types';
 
 type AggregationType = BucketAggregationType | MetricAggregationType;
 
@@ -33,6 +31,8 @@ const getFilter = (type: AggregationType) => {
         return ['date'];
       case 'geohash_grid':
         return ['geo_point'];
+      case 'histogram':
+        return ['number'];
       default:
         return [];
     }
@@ -62,7 +62,7 @@ export const useFields = (type: AggregationType | string[]) => {
   return async (q?: string) => {
     // _mapping doesn't support filtering, we avoid sending a request everytime q changes
     if (!rawFields) {
-      rawFields = await datasource.getFields(filter, range).toPromise();
+      rawFields = await lastValueFrom(datasource.getFields(filter, range));
     }
 
     return rawFields.filter(({ text }) => q === undefined || text.includes(q)).map(toSelectableValue);

@@ -1,16 +1,14 @@
 import React, { useCallback } from 'react';
+
 import { Button } from '@grafana/ui';
+
 import { actions } from '../state/actions';
-import { Dispatch } from 'redux';
+import { useDispatch } from '../state/context';
 
-type Props = {
-  rawQuery: string;
-  dispatch: Dispatch;
-};
-
-export function PlayButton({ dispatch }: Props) {
+export function PlayButton() {
+  const dispatch = useDispatch();
   const onClick = useCallback(() => {
     dispatch(actions.unpause());
   }, [dispatch]);
-  return <Button icon="play" onClick={onClick} type="button" variant="secondary" />;
+  return <Button icon="play" onClick={onClick} type="button" variant="secondary" aria-label="Unpause query" />;
 }

@@ -1,23 +1,45 @@
-import { from, merge, MonoTypeOperatorFunction, Observable, of, Subject, Subscription, throwError } from 'rxjs';
-import { catchError, filter, map, mergeMap, retryWhen, share, takeUntil, tap, throwIfEmpty } from 'rxjs/operators';
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
+import { from, lastValueFrom, MonoTypeOperatorFunction, Observable, Subject, Subscription, throwError } from 'rxjs';
 import { fromFetch } from 'rxjs/fetch';
+import {
+  catchError,
+  filter,
+  finalize,
+  map,
+  mergeMap,
+  retryWhen,
+  share,
+  takeUntil,
+  tap,
+  throwIfEmpty,
+} from 'rxjs/operators';
 import { v4 as uuidv4 } from 'uuid';
-import { BackendSrv as BackendService, BackendSrvRequest, FetchError, FetchResponse } from '@grafana/runtime';
-import { AppEvents, DataQueryErrorType } from '@grafana/data';
 
+import { AppEvents, DataQueryErrorType } from '@grafana/data';
+import { GrafanaEdition } from '@grafana/data/src/types/config';
+import { BackendSrv as BackendService, BackendSrvRequest, config, FetchError, FetchResponse } from '@grafana/runtime';
 import appEvents from 'app/core/app_events';
 import { getConfig } from 'app/core/config';
-import { DashboardSearchHit } from 'app/features/search/types';
-import { FolderDTO } from 'app/types';
-import { coreModule } from 'app/core/core_module';
-import { ContextSrv, contextSrv } from './context_srv';
-import { parseInitFromOptions, parseResponseBody, parseUrlFromOptions } from '../utils/fetch';
-import { isDataQuery, isLocalUrl } from '../utils/query';
-import { FetchQueue } from './FetchQueue';
-import { ResponseQueue } from './ResponseQueue';
-import { FetchQueueWorker } from './FetchQueueWorker';
+import { getSessionExpiry } from 'app/core/utils/auth';
+import { loadUrlToken } from 'app/core/utils/urlToken';
+import { DashboardModel } from 'app/features/dashboard/state';
+import { DashboardSearchItem } from 'app/features/search/types';
 import { TokenRevokedModal } from 'app/features/users/TokenRevokedModal';
+import { DashboardDTO, FolderDTO } from 'app/types';
+
 import { ShowModalReactEvent } from '../../types/events';
+import {
+  isContentTypeApplicationJson,
+  parseInitFromOptions,
+  parseResponseBody,
+  parseUrlFromOptions,
+} from '../utils/fetch';
+import { isDataQuery, isLocalUrl } from '../utils/query';
+
+import { FetchQueue } from './FetchQueue';
+import { FetchQueueWorker } from './FetchQueueWorker';
+import { ResponseQueue } from './ResponseQueue';
+import { ContextSrv, contextSrv } from './context_srv';
 
 const CANCEL_ALL_REQUESTS_REQUEST_ID = 'cancel_all_requests_request_id';
 
@@ -28,6 +50,12 @@ export interface BackendSrvDependencies {
   logout: () => void;
 }
 
+export interface FolderRequestOptions {
+  withAccessControl?: boolean;
+}
+
+const GRAFANA_TRACEID_HEADER = 'grafana-trace-id';
+
 export class BackendSrv implements BackendService {
   private inFlightRequests: Subject<string> = new Subject<string>();
   private HTTP_REQUEST_CANCELED = -1;
@@ -35,6 +63,8 @@ export class BackendSrv implements BackendService {
   private inspectorStream: Subject<FetchResponse | FetchError> = new Subject<FetchResponse | FetchError>();
   private readonly fetchQueue: FetchQueue;
   private readonly responseQueue: ResponseQueue;
+  private _tokenRotationInProgress?: Observable<FetchResponse> | null = null;
+  private deviceID?: string | null = null;
 
   private dependencies: BackendSrvDependencies = {
     fromFetch: fromFetch,
@@ -42,7 +72,6 @@ export class BackendSrv implements BackendService {
     contextSrv: contextSrv,
     logout: () => {
       contextSrv.setLoggedOut();
-      window.location.reload();
     },
   };
 
@@ -58,13 +87,28 @@ export class BackendSrv implements BackendService {
     this.internalFetch = this.internalFetch.bind(this);
     this.fetchQueue = new FetchQueue();
     this.responseQueue = new ResponseQueue(this.fetchQueue, this.internalFetch);
+
+    this.initGrafanaDeviceID();
+
     new FetchQueueWorker(this.fetchQueue, this.responseQueue, getConfig());
   }
 
+  private async initGrafanaDeviceID() {
+    if (config.buildInfo?.edition === GrafanaEdition.OpenSource) {
+      return;
+    }
+
+    try {
+      const fp = await FingerprintJS.load();
+      const result = await fp.get();
+      this.deviceID = result.visitorId;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async request<T = any>(options: BackendSrvRequest): Promise<T> {
-    return this.fetch<T>(options)
-      .pipe(map((response: FetchResponse<T>) => response.data))
-      .toPromise();
+    return await lastValueFrom(this.fetch<T>(options).pipe(map((response: FetchResponse<T>) => response.data)));
   }
 
   fetch<T>(options: BackendSrvRequest): Observable<FetchResponse<T>> {
@@ -109,18 +153,23 @@ export class BackendSrv implements BackendService {
 
     options = this.parseRequestOptions(options);
 
-    const fromFetchStream = this.getFromFetchStream<T>(options);
-    const failureStream = fromFetchStream.pipe(this.toFailureStream<T>(options));
-    const successStream = fromFetchStream.pipe(
-      filter((response) => response.ok === true),
-      tap((response) => {
-        this.showSuccessAlert(response);
-        this.inspectorStream.next(response);
-      })
-    );
+    const token = loadUrlToken();
+    if (token !== null && token !== '') {
+      if (config.jwtUrlLogin && config.jwtHeaderName) {
+        options.headers = options.headers ?? {};
+        options.headers[config.jwtHeaderName] = `${token}`;
+      }
+    }
 
-    return merge(successStream, failureStream).pipe(
-      catchError((err: FetchError) => throwError(this.processRequestError(options, err))),
+    // Add device id header if not OSS build
+    if (config.buildInfo?.edition !== GrafanaEdition.OpenSource && this.deviceID) {
+      options.headers = options.headers ?? {};
+      options.headers['X-Grafana-Device-Id'] = `${this.deviceID}`;
+    }
+
+    return this.getFromFetchStream<T>(options).pipe(
+      this.handleStreamResponse<T>(options),
+      this.handleStreamError(options),
       this.handleStreamCancellation(options)
     );
   }
@@ -134,7 +183,7 @@ export class BackendSrv implements BackendService {
   }
 
   async datasourceRequest(options: BackendSrvRequest): Promise<any> {
-    return this.fetch(options).toPromise();
+    return lastValueFrom(this.fetch(options));
   }
 
   private parseRequestOptions(options: BackendSrvRequest): BackendSrvRequest {
@@ -180,7 +229,9 @@ export class BackendSrv implements BackendService {
       mergeMap(async (response) => {
         const { status, statusText, ok, headers, url, type, redirected } = response;
 
-        const data = await parseResponseBody<T>(response, options.responseType);
+        const responseType = options.responseType ?? (isContentTypeApplicationJson(headers) ? 'json' : undefined);
+
+        const data = await parseResponseBody<T>(response, responseType);
         const fetchResponse: FetchResponse<T> = {
           status,
           statusText,
@@ -191,59 +242,11 @@ export class BackendSrv implements BackendService {
           type,
           redirected,
           config: options,
+          traceId: response.headers.get(GRAFANA_TRACEID_HEADER) ?? undefined,
         };
         return fetchResponse;
-      }),
-      share() // sharing this so we can split into success and failure and then merge back
+      })
     );
-  }
-
-  private toFailureStream<T>(options: BackendSrvRequest): MonoTypeOperatorFunction<FetchResponse<T>> {
-    const { isSignedIn } = this.dependencies.contextSrv.user;
-
-    return (inputStream) =>
-      inputStream.pipe(
-        filter((response) => response.ok === false),
-        mergeMap((response) => {
-          const { status, statusText, data } = response;
-          const fetchErrorResponse: FetchError = { status, statusText, data, config: options };
-          return throwError(fetchErrorResponse);
-        }),
-        retryWhen((attempts: Observable<any>) =>
-          attempts.pipe(
-            mergeMap((error, i) => {
-              const firstAttempt = i === 0 && options.retry === 0;
-
-              if (error.status === 401 && isLocalUrl(options.url) && firstAttempt && isSignedIn) {
-                if (error.data?.error?.id === 'ERR_TOKEN_REVOKED') {
-                  this.dependencies.appEvents.publish(
-                    new ShowModalReactEvent({
-                      component: TokenRevokedModal,
-                      props: {
-                        maxConcurrentSessions: error.data?.error?.maxConcurrentSessions,
-                      },
-                    })
-                  );
-
-                  return of({});
-                }
-
-                return from(this.loginPing()).pipe(
-                  catchError((err) => {
-                    if (err.status === 401) {
-                      this.dependencies.logout();
-                      return throwError(err);
-                    }
-                    return throwError(err);
-                  })
-                );
-              }
-
-              return throwError(error);
-            })
-          )
-        )
-      );
   }
 
   showApplicationErrorAlert(err: FetchError) {}
@@ -255,7 +258,7 @@ export class BackendSrv implements BackendService {
       return;
     }
 
-    // is showSuccessAlert is undefined we only show alerts non GET request, non data query and local api requests
+    // if showSuccessAlert is undefined we only show alerts non GET request, non data query and local api requests
     if (
       config.showSuccessAlert === undefined &&
       (config.method === 'GET' || isDataQuery(config.url) || !isLocalUrl(config.url))
@@ -270,7 +273,7 @@ export class BackendSrv implements BackendService {
     }
   }
 
-  showErrorAlert<T>(config: BackendSrvRequest, err: FetchError) {
+  showErrorAlert(config: BackendSrvRequest, err: FetchError) {
     if (config.showErrorAlert === false) {
       return;
     }
@@ -283,6 +286,11 @@ export class BackendSrv implements BackendService {
     let description = '';
     let message = err.data.message;
 
+    // Sometimes we have a better error message on err.message
+    if (message === 'Unexpected error' && err.message) {
+      message = err.message;
+    }
+
     if (message.length > 80) {
       description = message;
       message = 'Error';
@@ -290,12 +298,14 @@ export class BackendSrv implements BackendService {
 
     // Validation
     if (err.status === 422) {
+      description = err.data.message;
       message = 'Validation failed';
     }
 
     this.dependencies.appEvents.emit(err.status < 500 ? AppEvents.alertWarning : AppEvents.alertError, [
       message,
       description,
+      err.data.traceID,
     ]);
   }
 
@@ -333,7 +343,80 @@ export class BackendSrv implements BackendService {
     return err;
   }
 
-  private handleStreamCancellation(options: BackendSrvRequest): MonoTypeOperatorFunction<FetchResponse<any>> {
+  private handleStreamResponse<T>(options: BackendSrvRequest): MonoTypeOperatorFunction<FetchResponse<T>> {
+    return (inputStream) =>
+      inputStream.pipe(
+        map((response) => {
+          if (!response.ok) {
+            const { status, statusText, data } = response;
+            const fetchErrorResponse: FetchError = {
+              status,
+              statusText,
+              data,
+              config: options,
+              traceId: response.headers.get(GRAFANA_TRACEID_HEADER) ?? undefined,
+            };
+            throw fetchErrorResponse;
+          }
+          return response;
+        }),
+        tap((response) => {
+          this.showSuccessAlert(response);
+          this.inspectorStream.next(response);
+        })
+      );
+  }
+
+  private handleStreamError<T>(options: BackendSrvRequest): MonoTypeOperatorFunction<FetchResponse<T>> {
+    const { isSignedIn } = this.dependencies.contextSrv.user;
+
+    return (inputStream) =>
+      inputStream.pipe(
+        retryWhen((attempts: Observable<any>) =>
+          attempts.pipe(
+            mergeMap((error, i) => {
+              const firstAttempt = i === 0 && options.retry === 0;
+
+              if (error.status === 401 && isLocalUrl(options.url) && firstAttempt && isSignedIn) {
+                if (error.data?.error?.id === 'ERR_TOKEN_REVOKED') {
+                  this.dependencies.appEvents.publish(
+                    new ShowModalReactEvent({
+                      component: TokenRevokedModal,
+                      props: {
+                        maxConcurrentSessions: error.data?.error?.maxConcurrentSessions,
+                      },
+                    })
+                  );
+                  return throwError(() => error);
+                }
+
+                let authChecker = this.loginPing();
+
+                const expired = getSessionExpiry() * 1000 < Date.now();
+                if (config.featureToggles.clientTokenRotation && expired) {
+                  authChecker = this.rotateToken();
+                }
+
+                return from(authChecker).pipe(
+                  catchError((err) => {
+                    if (err.status === 401) {
+                      this.dependencies.logout();
+                      return throwError(err);
+                    }
+                    return throwError(err);
+                  })
+                );
+              }
+
+              return throwError(error);
+            })
+          )
+        ),
+        catchError((err: FetchError) => throwError(() => this.processRequestError(options, err)))
+      );
+  }
+
+  private handleStreamCancellation(options: BackendSrvRequest): MonoTypeOperatorFunction<FetchResponse> {
     return (inputStream) =>
       inputStream.pipe(
         takeUntil(
@@ -369,55 +452,109 @@ export class BackendSrv implements BackendService {
       );
   }
 
-  getInspectorStream(): Observable<FetchResponse<any> | FetchError> {
+  getInspectorStream(): Observable<FetchResponse | FetchError> {
     return this.inspectorStream;
   }
 
-  async get<T = any>(url: string, params?: any, requestId?: string): Promise<T> {
-    return await this.request({ method: 'GET', url, params, requestId });
+  async get<T = any>(
+    url: string,
+    params?: BackendSrvRequest['params'],
+    requestId?: BackendSrvRequest['requestId'],
+    options?: Partial<BackendSrvRequest>
+  ) {
+    return this.request<T>({ ...options, method: 'GET', url, params, requestId });
   }
 
-  async delete(url: string) {
-    return await this.request({ method: 'DELETE', url });
+  async delete<T = unknown>(url: string, data?: unknown, options?: Partial<BackendSrvRequest>) {
+    return this.request<T>({ ...options, method: 'DELETE', url, data });
   }
 
-  async post(url: string, data?: any) {
-    return await this.request({ method: 'POST', url, data });
+  async post<T = any>(url: string, data?: unknown, options?: Partial<BackendSrvRequest>) {
+    return this.request<T>({ ...options, method: 'POST', url, data });
   }
 
-  async patch(url: string, data: any) {
-    return await this.request({ method: 'PATCH', url, data });
+  async patch<T = any>(url: string, data: unknown, options?: Partial<BackendSrvRequest>) {
+    return this.request<T>({ ...options, method: 'PATCH', url, data });
   }
 
-  async put(url: string, data: any) {
-    return await this.request({ method: 'PUT', url, data });
+  async put<T = any>(url: string, data: unknown, options?: Partial<BackendSrvRequest>): Promise<T> {
+    return this.request<T>({ ...options, method: 'PUT', url, data });
   }
 
-  withNoBackendCache(callback: any) {
+  withNoBackendCache(callback: () => Promise<void>) {
     this.noBackendCache = true;
     return callback().finally(() => {
       this.noBackendCache = false;
     });
   }
 
-  loginPing() {
-    return this.request({ url: '/api/login/ping', method: 'GET', retry: 1 });
+  rotateToken() {
+    if (this._tokenRotationInProgress) {
+      return this._tokenRotationInProgress;
+    }
+
+    this._tokenRotationInProgress = this.fetch({ url: '/api/user/auth-tokens/rotate', method: 'POST', retry: 1 }).pipe(
+      finalize(() => {
+        this._tokenRotationInProgress = null;
+      }),
+      share()
+    );
+
+    return this._tokenRotationInProgress;
   }
 
-  search(query: any): Promise<DashboardSearchHit[]> {
+  loginPing() {
+    return this.fetch({ url: '/api/login/ping', method: 'GET', retry: 1 });
+  }
+
+  /** @deprecated */
+  search(query: any): Promise<DashboardSearchItem[]> {
     return this.get('/api/search', query);
   }
 
-  getDashboardByUid(uid: string) {
-    return this.get(`/api/dashboards/uid/${uid}`);
+  getDashboardByUid(uid: string): Promise<DashboardDTO> {
+    return this.get<DashboardDTO>(`/api/dashboards/uid/${uid}`);
   }
 
-  getFolderByUid(uid: string) {
-    return this.get<FolderDTO>(`/api/folders/${uid}`);
+  validateDashboard(dashboard: DashboardModel) {
+    // We want to send the dashboard as a JSON string (in the JSON body payload) so we can get accurate error line numbers back
+    const dashboardJson = JSON.stringify(dashboard, replaceJsonNulls, 2);
+
+    return this.request<ValidateDashboardResponse>({
+      method: 'POST',
+      url: `/api/dashboards/validate`,
+      data: { dashboard: dashboardJson },
+      showSuccessAlert: false,
+      showErrorAlert: false,
+    });
+  }
+
+  getPublicDashboardByUid(uid: string) {
+    return this.get<DashboardDTO>(`/api/public/dashboards/${uid}`);
+  }
+
+  getFolderByUid(uid: string, options: FolderRequestOptions = {}) {
+    const queryParams = new URLSearchParams();
+    if (options.withAccessControl) {
+      queryParams.set('accesscontrol', 'true');
+    }
+
+    return this.get<FolderDTO>(`/api/folders/${uid}?${queryParams.toString()}`);
   }
 }
 
-coreModule.factory('backendSrv', () => backendSrv);
 // Used for testing and things that really need BackendSrv
 export const backendSrv = new BackendSrv();
 export const getBackendSrv = (): BackendSrv => backendSrv;
+
+interface ValidateDashboardResponse {
+  isValid: boolean;
+  message?: string;
+}
+
+function replaceJsonNulls<T extends unknown>(key: string, value: T): T | undefined {
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+}

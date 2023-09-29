@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { selectOptionInTest } from './test-utils';
+import React, { useState } from 'react';
+
 import { SelectableValue } from '@grafana/data';
+
+import { selectOptionInTest } from '../../../../../public/test/helpers/selectOptionInTest';
+
 import { SelectBase } from './SelectBase';
 
 describe('SelectBase', () => {
-  const onChangeHandler = () => jest.fn();
+  const onChangeHandler = jest.fn();
   const options: Array<SelectableValue<number>> = [
     {
       label: 'Option 1',
@@ -22,9 +25,9 @@ describe('SelectBase', () => {
     render(<SelectBase onChange={onChangeHandler} />);
   });
 
-  it('renders empty options information', () => {
+  it('renders empty options information', async () => {
     render(<SelectBase onChange={onChangeHandler} />);
-    userEvent.click(screen.getByText(/choose/i));
+    await userEvent.click(screen.getByText(/choose/i));
     expect(screen.queryByText(/no options found/i)).toBeVisible();
   });
 
@@ -54,7 +57,7 @@ describe('SelectBase', () => {
 
     render(<Test />);
     expect(screen.queryByText('Test label')).toBeInTheDocument();
-    userEvent.click(screen.getByText('clear value'));
+    await userEvent.click(screen.getByText('clear value'));
     expect(screen.queryByText('Test label')).not.toBeInTheDocument();
   });
 
@@ -62,7 +65,7 @@ describe('SelectBase', () => {
     describe('is provided', () => {
       it('opens on focus', () => {
         render(<SelectBase onChange={onChangeHandler} openMenuOnFocus />);
-        fireEvent.focus(screen.getByRole('textbox'));
+        fireEvent.focus(screen.getByRole('combobox'));
         expect(screen.queryByText(/no options found/i)).toBeVisible();
       });
     });
@@ -74,8 +77,8 @@ describe('SelectBase', () => {
         ${' '}
       `('opens on arrow down/up or space', ({ key }) => {
         render(<SelectBase onChange={onChangeHandler} />);
-        fireEvent.focus(screen.getByRole('textbox'));
-        fireEvent.keyDown(screen.getByRole('textbox'), { key });
+        fireEvent.focus(screen.getByRole('combobox'));
+        fireEvent.keyDown(screen.getByRole('combobox'), { key });
         expect(screen.queryByText(/no options found/i)).toBeVisible();
       });
     });
@@ -182,9 +185,9 @@ describe('SelectBase', () => {
   });
 
   describe('options', () => {
-    it('renders menu with provided options', () => {
+    it('renders menu with provided options', async () => {
       render(<SelectBase options={options} onChange={onChangeHandler} />);
-      userEvent.click(screen.getByText(/choose/i));
+      await userEvent.click(screen.getByText(/choose/i));
       const menuOptions = screen.getAllByLabelText('Select option');
       expect(menuOptions).toHaveLength(2);
     });
@@ -198,10 +201,64 @@ describe('SelectBase', () => {
       expect(selectEl).toBeInTheDocument();
 
       await selectOptionInTest(selectEl, 'Option 2');
-      expect(spy).toHaveBeenCalledWith({
-        label: 'Option 2',
-        value: 2,
+      expect(spy).toHaveBeenCalledWith(
+        { label: 'Option 2', value: 2 },
+        { action: 'select-option', name: undefined, option: undefined }
+      );
+    });
+
+    it('hideSelectedOptions prop - when false does not hide selected', async () => {
+      render(<SelectBase onChange={jest.fn()} options={options} aria-label="My select" hideSelectedOptions={false} />);
+
+      const selectEl = screen.getByLabelText('My select');
+
+      await selectOptionInTest(selectEl, 'Option 2');
+      await userEvent.click(screen.getByText(/option 2/i));
+      const menuOptions = screen.getAllByLabelText('Select option');
+      expect(menuOptions).toHaveLength(2);
+    });
+  });
+
+  describe('Multi select', () => {
+    it('calls on change to remove an item when the user presses the remove button', async () => {
+      const value = [
+        {
+          label: 'Option 1',
+          value: 1,
+        },
+      ];
+      render(
+        <SelectBase onChange={onChangeHandler} options={options} isMulti={true} value={value} aria-label="My select" />
+      );
+
+      expect(screen.getByLabelText('My select')).toBeInTheDocument();
+
+      await userEvent.click(screen.getAllByLabelText('Remove')[0]);
+      expect(onChangeHandler).toHaveBeenCalledWith([], {
+        action: 'remove-value',
+        name: undefined,
+        removedValue: { label: 'Option 1', value: 1 },
       });
+    });
+    it('does not allow deleting selected values when disabled', async () => {
+      const value = [
+        {
+          label: 'Option 1',
+          value: 1,
+        },
+      ];
+      render(
+        <SelectBase
+          onChange={onChangeHandler}
+          options={options}
+          disabled
+          isMulti={true}
+          value={value}
+          aria-label="My select"
+        />
+      );
+
+      expect(screen.queryByLabelText('Remove Option 1')).not.toBeInTheDocument();
     });
   });
 });

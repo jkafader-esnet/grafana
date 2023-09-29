@@ -1,27 +1,37 @@
-import { LoadingPlaceholder } from '@grafana/ui';
+import React, { useMemo, useState } from 'react';
+
+import { Alert, LoadingPlaceholder } from '@grafana/ui';
 import {
   AlertManagerCortexConfig,
+  GrafanaManagedContactPoint,
   GrafanaManagedReceiverConfig,
-  Receiver,
+  TestReceiversAlert,
 } from 'app/plugins/datasource/alertmanager/types';
-import React, { FC, useEffect, useMemo } from 'react';
-import { useDispatch } from 'react-redux';
-import { useUnifiedAlertingSelector } from '../../../hooks/useUnifiedAlertingSelector';
-import { fetchGrafanaNotifiersAction, updateAlertManagerConfigAction } from '../../../state/actions';
+import { useDispatch } from 'app/types';
+
+import { alertmanagerApi } from '../../../api/alertmanagerApi';
+import { testReceiversAction, updateAlertManagerConfigAction } from '../../../state/actions';
 import { GrafanaChannelValues, ReceiverFormValues } from '../../../types/receiver-form';
-import { GRAFANA_RULES_SOURCE_NAME } from '../../../utils/datasource';
+import { GRAFANA_RULES_SOURCE_NAME, isVanillaPrometheusAlertManagerDataSource } from '../../../utils/datasource';
 import {
+  formChannelValuesToGrafanaChannelConfig,
   formValuesToGrafanaReceiver,
   grafanaReceiverToFormValues,
   updateConfigWithReceiver,
 } from '../../../utils/receiver-form';
+import { ProvisionedResource, ProvisioningAlert } from '../../Provisioning';
+import { ReceiverTypes } from '../grafanaAppReceivers/onCall/onCall';
+import { useOnCallIntegration } from '../grafanaAppReceivers/onCall/useOnCallIntegration';
+
 import { GrafanaCommonChannelSettings } from './GrafanaCommonChannelSettings';
 import { ReceiverForm } from './ReceiverForm';
+import { TestContactPointModal } from './TestContactPointModal';
+import { Notifier } from './notifiers';
 
 interface Props {
   alertManagerSourceName: string;
   config: AlertManagerCortexConfig;
-  existing?: Receiver;
+  existing?: GrafanaManagedContactPoint;
 }
 
 const defaultChannelValues: GrafanaChannelValues = Object.freeze({
@@ -33,39 +43,76 @@ const defaultChannelValues: GrafanaChannelValues = Object.freeze({
   type: 'email',
 });
 
-export const GrafanaReceiverForm: FC<Props> = ({ existing, alertManagerSourceName, config }) => {
-  const grafanaNotifiers = useUnifiedAlertingSelector((state) => state.grafanaNotifiers);
-
+export const GrafanaReceiverForm = ({ existing, alertManagerSourceName, config }: Props) => {
   const dispatch = useDispatch();
 
-  useEffect(() => {
-    if (!(grafanaNotifiers.result || grafanaNotifiers.loading)) {
-      dispatch(fetchGrafanaNotifiersAction());
-    }
-  }, [grafanaNotifiers, dispatch]);
+  const {
+    onCallNotifierMeta,
+    extendOnCallNotifierFeatures,
+    extendOnCallReceivers,
+    onCallFormValidators,
+    createOnCallIntegrations,
+    isLoadingOnCallIntegration,
+    hasOnCallError,
+  } = useOnCallIntegration();
+
+  const { useGrafanaNotifiersQuery } = alertmanagerApi;
+  const { data: grafanaNotifiers = [], isLoading: isLoadingNotifiers } = useGrafanaNotifiersQuery();
+
+  const [testChannelValues, setTestChannelValues] = useState<GrafanaChannelValues>();
 
   // transform receiver DTO to form values
   const [existingValue, id2original] = useMemo((): [
     ReceiverFormValues<GrafanaChannelValues> | undefined,
-    Record<string, GrafanaManagedReceiverConfig>
+    Record<string, GrafanaManagedReceiverConfig>,
   ] => {
-    if (!existing || !grafanaNotifiers.result) {
+    if (!existing || isLoadingNotifiers || isLoadingOnCallIntegration) {
       return [undefined, {}];
     }
-    return grafanaReceiverToFormValues(existing, grafanaNotifiers.result!);
-  }, [existing, grafanaNotifiers.result]);
 
-  const onSubmit = (values: ReceiverFormValues<GrafanaChannelValues>) => {
-    const newReceiver = formValuesToGrafanaReceiver(values, id2original, defaultChannelValues);
-    dispatch(
+    return grafanaReceiverToFormValues(extendOnCallReceivers(existing), grafanaNotifiers);
+  }, [existing, isLoadingNotifiers, grafanaNotifiers, extendOnCallReceivers, isLoadingOnCallIntegration]);
+
+  const onSubmit = async (values: ReceiverFormValues<GrafanaChannelValues>) => {
+    const newReceiver = formValuesToGrafanaReceiver(values, id2original, defaultChannelValues, grafanaNotifiers);
+    const receiverWithOnCall = await createOnCallIntegrations(newReceiver);
+
+    const newConfig = updateConfigWithReceiver(config, receiverWithOnCall, existing?.name);
+    await dispatch(
       updateAlertManagerConfigAction({
-        newConfig: updateConfigWithReceiver(config, newReceiver, existing?.name),
+        newConfig: newConfig,
         oldConfig: config,
         alertManagerSourceName: GRAFANA_RULES_SOURCE_NAME,
         successMessage: existing ? 'Contact point updated.' : 'Contact point created',
         redirectPath: '/alerting/notifications',
       })
-    );
+    ).then(() => {
+      dispatch(alertmanagerApi.util.invalidateTags(['AlertmanagerConfiguration']));
+    });
+  };
+
+  const onTestChannel = (values: GrafanaChannelValues) => {
+    setTestChannelValues(values);
+  };
+
+  const testNotification = (alert?: TestReceiversAlert) => {
+    if (testChannelValues) {
+      const existing: GrafanaManagedReceiverConfig | undefined = id2original[testChannelValues.__id];
+      const chan = formChannelValuesToGrafanaChannelConfig(testChannelValues, defaultChannelValues, 'test', existing);
+
+      const payload = {
+        alertManagerSourceName,
+        receivers: [
+          {
+            name: 'test',
+            grafana_managed_receiver_configs: [chan],
+          },
+        ],
+        alert,
+      };
+
+      dispatch(testReceiversAction(payload));
+    }
   };
 
   const takenReceiverNames = useMemo(
@@ -73,20 +120,63 @@ export const GrafanaReceiverForm: FC<Props> = ({ existing, alertManagerSourceNam
     [config, existing]
   );
 
-  if (grafanaNotifiers.result) {
-    return (
+  // if any receivers in the contact point have a "provenance", the entire contact point should be readOnly
+  const hasProvisionedItems = existing
+    ? (existing.grafana_managed_receiver_configs ?? []).some((item) => Boolean(item.provenance))
+    : false;
+
+  // this basically checks if we can manage the selected alert manager data source, either because it's a Grafana Managed one
+  // or a Mimir-based AlertManager
+  const isManageableAlertManagerDataSource = !isVanillaPrometheusAlertManagerDataSource(alertManagerSourceName);
+
+  const isEditable = isManageableAlertManagerDataSource && !hasProvisionedItems;
+  const isTestable = isManageableAlertManagerDataSource || hasProvisionedItems;
+
+  if (isLoadingNotifiers || isLoadingOnCallIntegration) {
+    return <LoadingPlaceholder text="Loading notifiers..." />;
+  }
+
+  const notifiers: Notifier[] = grafanaNotifiers.map((n) => {
+    if (n.type === 'oncall') {
+      return {
+        dto: extendOnCallNotifierFeatures(n),
+        meta: onCallNotifierMeta,
+      };
+    }
+
+    return { dto: n };
+  });
+
+  return (
+    <>
+      {hasOnCallError && (
+        <Alert severity="error" title="Loading OnCall integration failed">
+          Grafana OnCall plugin has been enabled in your Grafana instances but it is not reachable. Please check the
+          plugin configuration
+        </Alert>
+      )}
+
+      {hasProvisionedItems && <ProvisioningAlert resource={ProvisionedResource.ContactPoint} />}
+
       <ReceiverForm<GrafanaChannelValues>
+        isEditable={isEditable}
+        isTestable={isTestable}
         config={config}
         onSubmit={onSubmit}
         initialValues={existingValue}
-        notifiers={grafanaNotifiers.result}
+        onTestChannel={onTestChannel}
+        notifiers={notifiers}
         alertManagerSourceName={alertManagerSourceName}
-        defaultItem={defaultChannelValues}
+        defaultItem={{ ...defaultChannelValues }}
         takenReceiverNames={takenReceiverNames}
         commonSettingsComponent={GrafanaCommonChannelSettings}
+        customValidators={{ [ReceiverTypes.OnCall]: onCallFormValidators }}
       />
-    );
-  } else {
-    return <LoadingPlaceholder text="Loading notifiers..." />;
-  }
+      <TestContactPointModal
+        onDismiss={() => setTestChannelValues(undefined)}
+        isOpen={!!testChannelValues}
+        onTest={(alert) => testNotification(alert)}
+      />
+    </>
+  );
 };

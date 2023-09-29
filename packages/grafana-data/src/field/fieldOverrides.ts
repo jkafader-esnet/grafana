@@ -1,7 +1,20 @@
+import { isNumber, set, unset, get, cloneDeep } from 'lodash';
+import { useMemo, useRef } from 'react';
+import usePrevious from 'react-use/lib/usePrevious';
+
+import { VariableFormatID } from '@grafana/schema';
+
+import { compareArrayValues, compareDataFrameStructures, guessFieldTypeForField } from '../dataframe';
+import { PanelPlugin } from '../panel/PanelPlugin';
+import { GrafanaTheme2 } from '../themes';
+import { asHexString } from '../themes/colorManipulator';
+import { fieldMatchers, reduceField, ReducerID } from '../transformations';
 import {
   ApplyFieldOverrideOptions,
+  DataContextScopedVar,
   DataFrame,
   DataLink,
+  DecimalCount,
   DisplayProcessor,
   DisplayValue,
   DynamicConfigValue,
@@ -9,30 +22,25 @@ import {
   FieldColorModeId,
   FieldConfig,
   FieldConfigPropertyItem,
+  FieldConfigSource,
   FieldOverrideContext,
   FieldType,
+  DataLinkPostProcessor,
   InterpolateFunction,
   LinkModel,
   NumericRange,
+  PanelData,
   ScopedVars,
   TimeZone,
   ValueLinkConfig,
 } from '../types';
-import { fieldMatchers, reduceField, ReducerID } from '../transformations';
 import { FieldMatcher } from '../types/transformations';
-import { isNumber, set, unset, get, cloneDeep } from 'lodash';
-import { getDisplayProcessor, getRawDisplayProcessor } from './displayProcessor';
-import { guessFieldTypeForField } from '../dataframe';
-import { standardFieldConfigEditorRegistry } from './standardFieldConfigEditorRegistry';
-import { FieldConfigOptionsRegistry } from './FieldConfigOptionsRegistry';
-import { DataLinkBuiltInVars, locationUtil } from '../utils';
-import { formattedValueToString } from '../valueFormats';
-import { getFieldDisplayValuesProxy } from './getFieldDisplayValuesProxy';
-import { getFrameDisplayName } from './fieldState';
-import { getTimeField } from '../dataframe/processDataFrame';
+import { locationUtil } from '../utils';
 import { mapInternalLinkToExplore } from '../utils/dataLinks';
-import { getTemplateProxyForField } from './templateProxies';
-import { asHexString } from '../themes/colorManipulator';
+
+import { FieldConfigOptionsRegistry } from './FieldConfigOptionsRegistry';
+import { getDisplayProcessor, getRawDisplayProcessor } from './displayProcessor';
+import { standardFieldConfigEditorRegistry } from './standardFieldConfigEditorRegistry';
 
 interface OverrideProps {
   match: FieldMatcher;
@@ -112,18 +120,17 @@ export function applyFieldOverrides(options: ApplyFieldOverrideOptions): DataFra
       };
     });
 
-    const scopedVars: ScopedVars = {
-      __series: { text: 'Series', value: { name: getFrameDisplayName(newFrame, index) } }, // might be missing
-    };
-
     for (const field of newFrame.fields) {
       const config = field.config;
 
       field.state!.scopedVars = {
-        ...scopedVars,
-        __field: {
-          text: 'Field',
-          value: getTemplateProxyForField(field, newFrame, options.data),
+        __dataContext: {
+          value: {
+            data: options.data!,
+            frame: newFrame,
+            frameIndex: index,
+            field: field,
+          },
         },
       };
 
@@ -169,15 +176,15 @@ export function applyFieldOverrides(options: ApplyFieldOverrideOptions): DataFra
         range = { min, max, delta: max! - min! };
       }
 
+      field.state!.seriesIndex = seriesIndex;
+      field.state!.range = range;
+      field.type = type;
+
       // Some color modes needs series index to assign field color so we count
       // up series index here but ignore time fields
       if (field.type !== FieldType.time) {
         seriesIndex++;
       }
-
-      field.state!.seriesIndex = seriesIndex;
-      field.state!.range = range;
-      field.type = type;
 
       // and set the display processor using it
       field.display = getDisplayProcessor({
@@ -197,8 +204,39 @@ export function applyFieldOverrides(options: ApplyFieldOverrideOptions): DataFra
         field,
         field.state!.scopedVars,
         context.replaceVariables,
-        options.timeZone
+        options.timeZone,
+        options.dataLinkPostProcessor
       );
+
+      if (field.type === FieldType.nestedFrames) {
+        for (const nestedFrames of field.values) {
+          for (let nfIndex = 0; nfIndex < nestedFrames.length; nfIndex++) {
+            for (const valueField of nestedFrames[nfIndex].fields) {
+              valueField.state = {
+                scopedVars: {
+                  __dataContext: {
+                    value: {
+                      data: nestedFrames,
+                      frame: nestedFrames[nfIndex],
+                      frameIndex: nfIndex,
+                      field: valueField,
+                    },
+                  },
+                },
+              };
+
+              valueField.getLinks = getLinksSupplier(
+                nestedFrames[nfIndex],
+                valueField,
+                valueField.state!.scopedVars,
+                context.replaceVariables,
+                options.timeZone,
+                options.dataLinkPostProcessor
+              );
+            }
+          }
+        }
+      }
     }
 
     return newFrame;
@@ -209,11 +247,20 @@ export function applyFieldOverrides(options: ApplyFieldOverrideOptions): DataFra
 // via field.display(value). this can potentially be removed once we...
 // 1. process data packets incrementally and/if cache the results in the streaming datafame (maybe by buffer index)
 // 2. have the ability to selectively get display color or text (but not always both, which are each quite expensive)
-// 3. sufficently optimize text formating and threshold color determinitation
+// 3. sufficently optimize text formatting and threshold color determinitation
 function cachingDisplayProcessor(disp: DisplayProcessor, maxCacheSize = 2500): DisplayProcessor {
-  const cache = new Map<any, DisplayValue>();
+  type dispCache = Map<any, DisplayValue>;
+  // decimals -> cache mapping, -1 is unspecified decimals
+  const caches = new Map<number, dispCache>();
 
-  return (value: any) => {
+  // pre-init caches for up to 15 decimals
+  for (let i = -1; i <= 15; i++) {
+    caches.set(i, new Map());
+  }
+
+  return (value: unknown, decimals?: DecimalCount) => {
+    let cache = caches.get(decimals ?? -1)!;
+
     let v = cache.get(value);
 
     if (!v) {
@@ -222,7 +269,7 @@ function cachingDisplayProcessor(disp: DisplayProcessor, maxCacheSize = 2500): D
         cache.clear();
       }
 
-      v = disp(value);
+      v = disp(value, decimals);
 
       // convert to hex6 or hex8 so downstream we can cheaply test for alpha (and set new alpha)
       // via a simple length check (in colorManipulator) rather using slow parsing via tinycolor
@@ -274,6 +321,11 @@ export function setDynamicConfigValue(config: FieldConfig, value: DynamicConfigV
 // config -> from DS
 // defaults -> from Panel config
 export function setFieldConfigDefaults(config: FieldConfig, defaults: FieldConfig, context: FieldOverrideEnv) {
+  // For cases where we have links on the datasource config and the panel config, we need to merge them
+  if (config.links && defaults.links) {
+    // Combine the data source links and the panel default config links
+    config.links = [...config.links, ...defaults.links];
+  }
   for (const fieldConfigProperty of context.fieldConfigRegistry.list()) {
     if (fieldConfigProperty.isCustom && !config.custom) {
       config.custom = {};
@@ -290,8 +342,8 @@ export function setFieldConfigDefaults(config: FieldConfig, defaults: FieldConfi
 }
 
 function processFieldConfigValue(
-  destination: Record<string, any>, // it's mutable
-  source: Record<string, any>,
+  destination: Record<string, unknown>, // it's mutable
+  source: Record<string, unknown>,
   fieldConfigProperty: FieldConfigPropertyItem,
   context: FieldOverrideEnv
 ) {
@@ -338,117 +390,106 @@ export function validateFieldConfig(config: FieldConfig) {
   }
 }
 
-export const getLinksSupplier = (
-  frame: DataFrame,
-  field: Field,
-  fieldScopedVars: ScopedVars,
-  replaceVariables: InterpolateFunction,
-  timeZone?: TimeZone
-) => (config: ValueLinkConfig): Array<LinkModel<Field>> => {
-  if (!field.config.links || field.config.links.length === 0) {
-    return [];
+const defaultInternalLinkPostProcessor: DataLinkPostProcessor = (options) => {
+  // For internal links at the moment only destination is Explore.
+  const { link, linkModel, dataLinkScopedVars, field, replaceVariables } = options;
+
+  if (link.internal) {
+    return mapInternalLinkToExplore({
+      link,
+      internalLink: link.internal,
+      scopedVars: dataLinkScopedVars,
+      field,
+      range: link.internal.range,
+      replaceVariables,
+    });
+  } else {
+    return linkModel;
   }
-  const timeRangeUrl = locationUtil.getTimeRangeUrlParams();
-  const { timeField } = getTimeField(frame);
+};
 
-  return field.config.links.map((link: DataLink) => {
-    const variablesQuery = locationUtil.getVariablesUrlParams();
-    let dataFrameVars = {};
-    let valueVars = {};
+export const getLinksSupplier =
+  (
+    frame: DataFrame,
+    field: Field,
+    fieldScopedVars: ScopedVars,
+    replaceVariables: InterpolateFunction,
+    timeZone?: TimeZone,
+    dataLinkPostProcessor?: DataLinkPostProcessor
+  ) =>
+  (config: ValueLinkConfig): Array<LinkModel<Field>> => {
+    if (!field.config.links || field.config.links.length === 0) {
+      return [];
+    }
 
-    // We are not displaying reduction result
-    if (config.valueRowIndex !== undefined && !isNaN(config.valueRowIndex)) {
-      const fieldsProxy = getFieldDisplayValuesProxy({
-        frame,
-        rowIndex: config.valueRowIndex,
-        timeZone: timeZone,
-      });
-
-      valueVars = {
-        raw: field.values.get(config.valueRowIndex),
-        numeric: fieldsProxy[field.name].numeric,
-        text: fieldsProxy[field.name].text,
-        time: timeField ? timeField.values.get(config.valueRowIndex) : undefined,
+    const linkModels = field.config.links.map((link: DataLink) => {
+      const dataContext: DataContextScopedVar = getFieldDataContextClone(frame, field, fieldScopedVars);
+      const dataLinkScopedVars = {
+        ...fieldScopedVars,
+        __dataContext: dataContext,
       };
 
-      dataFrameVars = {
-        __data: {
-          value: {
-            name: frame.name,
-            refId: frame.refId,
-            fields: fieldsProxy,
+      const boundReplaceVariables: InterpolateFunction = (value, scopedVars, format) =>
+        replaceVariables(value, { ...dataLinkScopedVars, ...scopedVars }, format);
+
+      // We are not displaying reduction result
+      if (config.valueRowIndex !== undefined && !isNaN(config.valueRowIndex)) {
+        dataContext.value.rowIndex = config.valueRowIndex;
+      } else {
+        dataContext.value.calculatedValue = config.calculatedValue;
+      }
+
+      let linkModel: LinkModel<Field>;
+
+      if (link.onClick) {
+        linkModel = {
+          href: link.url,
+          title: replaceVariables(link.title || '', dataLinkScopedVars),
+          target: link.targetBlank ? '_blank' : undefined,
+          onClick: (evt: MouseEvent, origin: Field) => {
+            link.onClick!({
+              origin: origin ?? field,
+              e: evt,
+              replaceVariables: boundReplaceVariables,
+            });
           },
-          text: 'Data',
-        },
-      };
-    } else {
-      if (config.calculatedValue) {
-        valueVars = {
-          raw: config.calculatedValue.numeric,
-          numeric: config.calculatedValue.numeric,
-          text: formattedValueToString(config.calculatedValue),
+          origin: field,
+        };
+      } else {
+        let href = link.onBuildUrl
+          ? link.onBuildUrl({
+              origin: field,
+              replaceVariables: boundReplaceVariables,
+            })
+          : link.url;
+
+        if (href) {
+          href = locationUtil.assureBaseUrl(href.replace(/\n/g, ''));
+          href = replaceVariables(href, dataLinkScopedVars, VariableFormatID.UriEncode);
+          href = locationUtil.processUrl(href);
+        }
+
+        linkModel = {
+          href,
+          title: replaceVariables(link.title || '', dataLinkScopedVars),
+          target: link.targetBlank ? '_blank' : undefined,
+          origin: field,
         };
       }
-    }
 
-    const variables = {
-      ...fieldScopedVars,
-      __value: {
-        text: 'Value',
-        value: valueVars,
-      },
-      ...dataFrameVars,
-      [DataLinkBuiltInVars.keepTime]: {
-        text: timeRangeUrl,
-        value: timeRangeUrl,
-      },
-      [DataLinkBuiltInVars.includeVars]: {
-        text: variablesQuery,
-        value: variablesQuery,
-      },
-    };
-
-    if (link.onClick) {
-      return {
-        href: link.url,
-        title: replaceVariables(link.title || '', variables),
-        target: link.targetBlank ? '_blank' : undefined,
-        onClick: (evt, origin) => {
-          link.onClick!({
-            origin: origin ?? field,
-            e: evt,
-            replaceVariables: (v) => replaceVariables(v, variables),
-          });
-        },
-        origin: field,
-      };
-    }
-
-    if (link.internal) {
-      // For internal links at the moment only destination is Explore.
-      return mapInternalLinkToExplore({
-        link,
-        internalLink: link.internal,
-        scopedVars: variables,
+      return (dataLinkPostProcessor || defaultInternalLinkPostProcessor)({
+        frame,
         field,
-        range: {} as any,
+        dataLinkScopedVars,
         replaceVariables,
+        config,
+        link,
+        linkModel,
       });
-    }
+    });
 
-    let href = locationUtil.assureBaseUrl(link.url.replace(/\n/g, ''));
-    href = replaceVariables(href, variables);
-    href = locationUtil.processUrl(href);
-
-    const info: LinkModel<Field> = {
-      href,
-      title: replaceVariables(link.title || '', variables),
-      target: link.targetBlank ? '_blank' : undefined,
-      origin: field,
-    };
-    return info;
-  });
-};
+    return linkModels.filter((link): link is LinkModel => !!link);
+  };
 
 /**
  * Return a copy of the DataFrame with raw data
@@ -479,4 +520,81 @@ export function applyRawFieldOverrides(data: DataFrame[]): DataFrame[] {
   }
 
   return newData;
+}
+
+/**
+ * @internal
+ */
+export function useFieldOverrides(
+  plugin: PanelPlugin | undefined,
+  fieldConfig: FieldConfigSource | undefined,
+  data: PanelData | undefined,
+  timeZone: string,
+  theme: GrafanaTheme2,
+  replace: InterpolateFunction,
+  dataLinkPostProcessor?: DataLinkPostProcessor
+): PanelData | undefined {
+  const fieldConfigRegistry = plugin?.fieldConfigRegistry;
+  const structureRev = useRef(0);
+  const prevSeries = usePrevious(data?.series);
+
+  return useMemo(() => {
+    if (!fieldConfigRegistry || !fieldConfig || !data) {
+      return;
+    }
+
+    const series = data?.series;
+
+    if (
+      data.structureRev == null &&
+      series &&
+      prevSeries &&
+      !compareArrayValues(series, prevSeries, compareDataFrameStructures)
+    ) {
+      structureRev.current++;
+    }
+
+    const panelData: PanelData = {
+      structureRev: structureRev.current,
+      ...data,
+      series: applyFieldOverrides({
+        data: series,
+        fieldConfig,
+        fieldConfigRegistry,
+        replaceVariables: replace,
+        theme,
+        timeZone,
+        dataLinkPostProcessor,
+      }),
+    };
+    if (data.annotations && data.annotations.length > 0) {
+      panelData.annotations = applyFieldOverrides({
+        data: data.annotations,
+        fieldConfig: {
+          defaults: {},
+          overrides: [],
+        },
+        replaceVariables: replace,
+        theme,
+        timeZone,
+        dataLinkPostProcessor,
+      });
+    }
+    return panelData;
+  }, [fieldConfigRegistry, fieldConfig, data, prevSeries, timeZone, theme, replace, dataLinkPostProcessor]);
+}
+
+/**
+ * Clones the existing dataContext or creates a new one
+ */
+function getFieldDataContextClone(frame: DataFrame, field: Field, fieldScopedVars: ScopedVars) {
+  if (fieldScopedVars?.__dataContext) {
+    return {
+      value: {
+        ...fieldScopedVars.__dataContext.value,
+      },
+    };
+  }
+
+  return { value: { frame, field, data: [frame] } };
 }
