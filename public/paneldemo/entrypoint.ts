@@ -9,7 +9,7 @@ import { Provider } from 'react-redux';
 import { profiler } from 'app/core/profiler';
 
 // imports copied from app.ts
-import { PanelRenderer } from '../app/features/panel/PanelRenderer';
+import { PanelRenderer } from '../app/features/panel/components/PanelRenderer';
 import { registerEchoBackend, setEchoSrv, setPanelRenderer, setQueryRunnerFactory, locationService, navigationLogger } from '@grafana/runtime';
 import config from 'app/core/config';
 import { QueryRunner } from '../app/features/query/state/QueryRunner';
