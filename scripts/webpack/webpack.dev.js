@@ -11,6 +11,7 @@ const WebpackAssetsManifest = require('webpack-assets-manifest');
 const { merge } = require('webpack-merge');
 
 const common = require('./webpack.common.js');
+const panelExporter = require('./webpack.panel-exporter.js');
 const esbuildTargets = resolveToEsbuildTarget(browserslist(), { printUnknownTargets: false });
 // esbuild-loader 3.0.0+ requires format to be set to prevent it
 // from defaulting to 'iife' which breaks monaco/loader once minified.
@@ -19,7 +20,7 @@ const esbuildOptions = {
   format: undefined,
 };
 
-module.exports = (env = {}) => {
+let devGrafana = (env = {}) => {
   return merge(common, {
     devtool: 'source-map',
     mode: 'development',
@@ -124,3 +125,5 @@ module.exports = (env = {}) => {
     ],
   });
 };
+
+module.exports = [devGrafana, panelExporter];
