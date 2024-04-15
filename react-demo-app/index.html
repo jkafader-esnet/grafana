@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- this is craptastic. Add webpack entrypoints to generate this with a sane name -->
+    <!-- also of note: we'll need to sandbox/namespace this CSS, e.g. prefixing everything with .grafana.running.panel or some such other high-specificity selector. Luckily webpack is bananas so this should be "easy" to achieve after "just" 20 hours or so of trial and error. --> 
+    <link rel="stylesheet" href="http://localhost:3000/public/build/grafana.dark.3fd8eeb55d99063027c7.css" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + React</title>
   </head>
