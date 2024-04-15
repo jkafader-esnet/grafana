@@ -8,7 +8,7 @@ function App() {
   return (
     <>
       <h1>Hello World</h1>
-      <Chart dashboardUid="ediakwqx4axhca" panelId={1} height="300" width="600" />
+      <Chart dashboardUid="bdikkaacvm7swe" panelId={1} height={300} width={650} />
     </>
   )
 }

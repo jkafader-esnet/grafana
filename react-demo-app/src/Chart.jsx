@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 
 class Chart extends React.Component {
     constructor(props) {
@@ -9,24 +9,28 @@ class Chart extends React.Component {
     componentDidMount() {
         let myElem = this.domTarget.current;
         let props = this.props;
-        if(!window.Grafana) return;
-        window.Grafana.GrafanaContext(this.props.dashboardUid).then(function (state) {
-            // signature: function(stateObj, dashboardUid, panelId, HTML Element, height, width)
+        console.log("window.Grafana", window.Grafana);
+        if(!window.Grafana) {
+            console.error("window.Grafana not found"); return;
+        }
+        window.Grafana.Context(this.props.dashboardUid).then(function (appContext) {
+            console.log("on the client side. appContext is now", appContext)
+            // signature: function(appContext, dashboardUid, panelId, HTML Element, height, width)
             window.Grafana.bindPanelToElement(
-                state,
+                appContext,
                 props.dashboardUid,
                 props.panelId,
                 myElem,
-                props.height,
-                props.width
+                parseInt(props.height),
+                parseInt(props.width)
             );
         });
     }
 
     render() {
         let styles = {
-            height: this.props.height + 20, // 20px for "safety"
-            width: this.props.width + 20,
+            height: parseInt(this.props.height) + 20 + "px", // 20px for "safety"
+            width: parseInt(this.props.width) + 20 + "px",
         };
         return <div className="grafana panel" ref={this.domTarget} style={styles} />;
     }

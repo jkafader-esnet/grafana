@@ -24,6 +24,7 @@ module.exports = {
     filename: '[name].js',
     library: { "name": "Grafana", "type": "window" },
   },
+  ignoreWarnings: [/export .* was not found in/],
   resolve: {
     extensions: ['.ts', '.tsx', '.es6', '.js', '.json', '.svg'],
     alias: {

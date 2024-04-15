@@ -126,4 +126,118 @@ let devGrafana = (env = {}) => {
   });
 };
 
-module.exports = [devGrafana, panelExporter];
+let devPanelExporter = (env = {}) => {
+  let mergedSettings =  merge(panelExporter, {
+    devtool: 'source-map',
+    output: {
+      pathinfo: false
+    },
+    watchOptions: {
+      ignored: /node_modules/,
+    },
+    // https://webpack.js.org/guides/build-performance/#avoid-extra-optimization-steps
+    optimization: {
+      //minimizer: [null], 
+      // this also breaks the build. Somehow, the terser plugin appears to be involved
+      // with module bundling, i.e. implementing 'library: { "name": "Grafana", "type": "window" },'
+    },
+    resolve: {
+      alias: {
+        // Packages linked for development need react to be resolved from the same location
+        react: require.resolve('react'),
+
+        // Also Grafana packages need to be resolved from the same location so they share
+        // the same singletons
+        '@grafana/runtime': path.resolve(__dirname, '../../packages/grafana-runtime'),
+        '@grafana/data': path.resolve(__dirname, '../../packages/grafana-data'),
+      },
+    },
+    cache: {
+      type: 'filesystem',
+      name: 'grafana-default-development',
+      buildDependencies: {
+        config: [__filename],
+      },
+    },
+    /*// If we enabled watch option via CLI
+
+
+    module: {
+      // Note: order is bottom-to-top and/or right-to-left
+      rules: [
+        {
+          test: /\.tsx?$/,
+          use: {
+            loader: 'esbuild-loader',
+            options: esbuildOptions,
+          },
+        },
+        require('./sass.rule.js')({
+          sourceMap: false,
+          preserveUrl: false,
+        }),
+      ],
+    },
+
+    // https://webpack.js.org/guides/build-performance/#output-without-path-info
+
+    // these definitely break the build. Why?
+    // https://webpack.js.org/guides/build-performance/#avoid-extra-optimization-steps
+    optimization: {
+      moduleIds: 'named',
+      runtimeChunk: true,
+      removeAvailableModules: false,
+      removeEmptyChunks: false,
+      splitChunks: false,
+    },
+
+    // enable persistent cache for faster cold starts
+    cache: {
+      type: 'filesystem',
+      name: 'grafana-default-development',
+      buildDependencies: {
+        config: [__filename],
+      },
+    },
+
+    plugins: [
+      parseInt(env.noTsCheck, 10)
+        ? new DefinePlugin({}) // bogus plugin to satisfy webpack API
+        : new ForkTsCheckerWebpackPlugin({
+            async: true, // don't block webpack emit
+            typescript: {
+              mode: 'write-references',
+              memoryLimit: 4096,
+              diagnosticOptions: {
+                semantic: true,
+                syntactic: true,
+              },
+            },
+          }),
+      parseInt(env.noLint, 10)
+        ? new DefinePlugin({}) // bogus plugin to satisfy webpack API
+        : new ESLintPlugin({
+            cache: true,
+            lintDirtyModulesOnly: true, // don't lint on start, only lint changed files
+            extensions: ['.ts', '.tsx'],
+          }),
+      new MiniCssExtractPlugin({
+        filename: 'grafana.[name].[contenthash].css',
+      }),
+      new DefinePlugin({
+        'process.env': {
+          NODE_ENV: JSON.stringify('development'),
+        },
+      }),
+      new WebpackAssetsManifest({
+        entrypoints: true,
+        integrity: true,
+        publicPath: true,
+      }),
+    ],*/
+  });
+  console.log("merged settings are:", mergedSettings)
+  return mergedSettings;
+}
+
+module.exports = [devGrafana, devPanelExporter];
