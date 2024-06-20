@@ -45,7 +45,7 @@ Change this line to match the Dashboard UI and Panel ID from step 6
 [in another shell]
 ```
 cd react-demo-app
-npm run install
+npm install
 npm run dev
 ```
 
