@@ -49,19 +49,18 @@ npm run install
 npm run dev
 ```
 
-9. Errata / Strong proof-of-concept vibes
+9. Errata / Ongoing considerations
 
-Currently, there are a number of crazy things in here. 
+Currently, there are a number of things that still require attention in here. 
 
-- One of them is that we run a proxy in front of grafana that scrapes window.grafanaBootData in a very willy-nilly way (split() abounds). I think probably this is the area where we should put this entire thing behind a Go API endpoint. This is also very likely where access control will come most directly into play. I can't imagine that this is information everyone will want published.
+- Currently, we're proxying CSS. This needs refinement. Possibly we should add a known-name target to the build for CSS files?
 
-- Another of them is that we're also going to be proxying CSS. This needs refinement.
+- How can we parameterize the Dashboard UID? This should definitely not be hard-coded. That said, given that dashboard UIDs are generally high-entropy strings, it seems like they are part of a security posture and we should publish a list to non-authenticated users.
 
-- Yet another of them is that I'm terribly ashamed of requiring a dashboard UID to be compiled directly into the code. It's... not great, at all. Obviously we can parameterize this into settings, but that doesn't seem good enough either... Perhaps a list of available dashboard UIDs from a separate service? Again, security probably comes into play here.
+- Currently, the `/api/bootdata` endpoint uses the same security scheme as the application root (`/`). This definitely needs more thought and refinement
 
-- Speaking of security, there's not really any security to speak of. This will have to be brought up to snuff.
+- the `/api/bootdata` endpoint currently returns the `Access-Control-Allow-Origin: *` ("allow all hosts for CORS") policy. This seems like it should at least be a configurable list of downstream hosts.
 
-- I brought up the concept of a BFF with Juani surrounding security, that's a whole complex conversation that lives on the current bleeding edge of authentication. This is more concept than executed software in most contexts.
+- More conversation is definitely required to refine the approach to security and authentication overall.
 
-- Even after a couple of coding passes, I don't think entrypoint.ts comes even close to passing linting. That's what I get for writing code in plain text. This definitely needs cleanup.
 
