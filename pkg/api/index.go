@@ -268,6 +268,7 @@ func (hs *HTTPServer) BootData(c *contextmodel.ReqContext) {
 		c.Handle(hs.Cfg, 500, "Failed to get settings", err)
 		return
 	}
+	c.Resp.Header().Set("Access-Control-Allow-Origin", "*")
 	c.JSON(http.StatusOK, util.DynMap{
 		"user":     data.User,
 		"settings": data.Settings,
