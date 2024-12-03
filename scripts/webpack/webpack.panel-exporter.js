@@ -17,6 +17,7 @@ const esbuildOptions = {
 };
 
 module.exports = {
+  devtool: 'source-map',
   target: "web",
   entry: { testlib: './public/paneldemo/entrypoint.ts' },
   output: {
