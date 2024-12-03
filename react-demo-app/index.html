@@ -5,15 +5,33 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <!-- this is craptastic. Add webpack entrypoints to generate this with a sane name -->
     <!-- also of note: we'll need to sandbox/namespace this CSS, e.g. prefixing everything with .grafana.running.panel or some such other high-specificity selector. Luckily webpack is bananas so this should be "easy" to achieve after "just" 20 hours or so of trial and error. --> 
-    <link rel="stylesheet" href="http://localhost:3000/public/build/grafana.dark.3fd8eeb55d99063027c7.css" />
-
+    <link rel="stylesheet" href="/public/build/grafana.dark.8c716fbcf630eae84ced.css" />
+    <script>
+      async function getBootData(){
+        try{
+          const response = await fetch("/api/bootdata");
+          if(response.status === 401){
+            console.error("unauthorized");
+            //window.location = "/login";
+          }
+          window.grafanaBootData = await response.json();
+        } catch(err) {
+          window.location = "/login";
+        }
+      }
+      getBootData();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + React</title>
+    <style>
+      [title~="Menu"] { display:none; }
+      .grid-drag-cancel.show-on-hover { display:none; }
+      .pointer { cursor: default; pointer-events: none; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-    <script src="/scrapeBootData"></script>
+    <script src="/public/build/paneldemo/testlib.js"></script>
     <script type="module" src="/src/main.jsx"></script>
-    <script src="http://localhost:3000/public/build/paneldemo/testlib.js"></script>
   </body>
 </html>

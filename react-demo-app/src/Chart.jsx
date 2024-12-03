@@ -4,16 +4,41 @@ class Chart extends React.Component {
     constructor(props) {
         super(props);
         this.domTarget = React.createRef();
+        this.bound = false;
+    }
+
+    bindGrafana() {
+        if(!this.bound){
+            window.Grafana.Context(this.props.dashboardUid).then((appContext)=>{
+                console.log("on the client side. appContext is now", appContext)
+                // signature: function(appContext, dashboardUid, panelId, HTML Element, height, width)
+                window.Grafana.bindPanelToElement(
+                    appContext,
+                    props.dashboardUid,
+                    props.panelId,
+                    myElem,
+                    parseInt(props.height),
+                    parseInt(props.width)
+                );
+                this.bound = true;
+            }).catch((err)=>{
+                console.log(err);
+                console.log('recursing...');
+                setTimeout(this.bindGrafana(), 1000);
+            });
+        }
     }
 
     componentDidMount() {
-        let myElem = this.domTarget.current;
-        let props = this.props;
-        console.log("window.Grafana", window.Grafana);
         if(!window.Grafana) {
             console.error("window.Grafana not found"); return;
         }
-        window.Grafana.Context(this.props.dashboardUid).then(function (appContext) {
+        if(!window.grafanaBootData?.settings?.datasources){
+            console.error("window.grafanaBootData not found"); return;
+        }
+        let myElem = this.domTarget.current;
+        let props = this.props;
+        window.Grafana.Context(this.props.dashboardUid).then((appContext)=>{
             console.log("on the client side. appContext is now", appContext)
             // signature: function(appContext, dashboardUid, panelId, HTML Element, height, width)
             window.Grafana.bindPanelToElement(
@@ -24,7 +49,7 @@ class Chart extends React.Component {
                 parseInt(props.height),
                 parseInt(props.width)
             );
-        });
+        })
     }
 
     render() {
