@@ -218,6 +218,7 @@ type Cfg struct {
 	DefaultHomeDashboardPath string
 
 	// Auth
+	LoginCookieDomain             string
 	LoginCookieName               string
 	LoginMaxInactiveLifetime      time.Duration
 	LoginMaxLifetime              time.Duration
@@ -1518,6 +1519,8 @@ func readSecuritySettings(iniFile *ini.File, cfg *Cfg) error {
 
 func readAuthSettings(iniFile *ini.File, cfg *Cfg) (err error) {
 	auth := iniFile.Section("auth")
+
+	cfg.LoginCookieDomain = valueAsString(auth, "login_cookie_domain", cfg.Domain)
 
 	cfg.LoginCookieName = valueAsString(auth, "login_cookie_name", "grafana_session")
 	const defaultMaxInactiveLifetime = "7d"
