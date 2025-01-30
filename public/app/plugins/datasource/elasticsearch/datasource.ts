@@ -446,7 +446,7 @@ export class ElasticDatasource
     const versionMessage = isSupported ? '' : `WARNING: ${unsupportedVersionMessage} `;
     // validate that the index exist and has date field
     return lastValueFrom(
-      this.getFields(['date']).pipe(
+      this.getFields(['date', 'date_range']).pipe(
         mergeMap((dateFields) => {
           const timeField = find(dateFields, { text: this.timeField });
           if (!timeField) {
