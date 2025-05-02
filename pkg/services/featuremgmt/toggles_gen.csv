@@ -81,6 +81,9 @@ externalCorePlugins,experimental,@grafana/plugins-platform-backend,false,false,f
 pluginsAPIMetrics,experimental,@grafana/plugins-platform-backend,false,false,true
 externalServiceAccounts,preview,@grafana/identity-access-team,false,false,false
 panelMonitoring,GA,@grafana/dataviz-squad,false,false,true
+panelExporterCookieDomain,experimental,@grafana/sharing-squad,false,false,false
+panelExporterBootdataApi,experimental,@grafana/sharing-squad,false,false,false
+panelExporter,experimental,@grafana/sharing-squad,false,false,true
 enableNativeHTTPHistogram,experimental,@grafana/grafana-backend-services-squad,false,true,false
 disableClassicHTTPHistogram,experimental,@grafana/grafana-backend-services-squad,false,true,false
 formatString,GA,@grafana/dataviz-squad,false,false,true

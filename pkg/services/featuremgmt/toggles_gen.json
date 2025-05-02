@@ -2988,6 +2988,66 @@
     },
     {
       "metadata": {
+        "name": "panelExporter",
+        "resourceVersion": "1746073342239",
+        "creationTimestamp": "2025-05-01T04:17:32Z",
+        "deletionTimestamp": "2025-05-01T04:20:41Z",
+        "annotations": {
+          "grafana.app/updatedTimestamp": "2025-05-01 04:22:22.239744 +0000 UTC"
+        }
+      },
+      "spec": {
+        "description": "Allows users to render Grafana Panels in external applications.",
+        "stage": "experimental",
+        "codeowner": "@grafana/sharing-squad",
+        "frontend": true
+      }
+    },
+    {
+      "metadata": {
+        "name": "panelExporterBootdataAPI",
+        "resourceVersion": "1746073052293",
+        "creationTimestamp": "2025-05-01T04:17:32Z",
+        "deletionTimestamp": "2025-05-01T04:18:27Z"
+      },
+      "spec": {
+        "description": "Presents GrafanaBootData as an authenticated API endpoint. Required by Grafana Panel Exporter",
+        "stage": "experimental",
+        "codeowner": "@grafana/sharing-squad",
+        "expression": "true"
+      }
+    },
+    {
+      "metadata": {
+        "name": "panelExporterBootdataApi",
+        "resourceVersion": "1746073107121",
+        "creationTimestamp": "2025-05-01T04:18:27Z",
+        "deletionTimestamp": "2025-05-01T04:20:41Z"
+      },
+      "spec": {
+        "description": "Presents GrafanaBootData as an authenticated API endpoint. Required by Grafana Panel Exporter",
+        "stage": "experimental",
+        "codeowner": "@grafana/sharing-squad"
+      }
+    },
+    {
+      "metadata": {
+        "name": "panelExporterCookieDomain",
+        "resourceVersion": "1746073107121",
+        "creationTimestamp": "2025-05-01T04:17:32Z",
+        "deletionTimestamp": "2025-05-01T04:20:41Z",
+        "annotations": {
+          "grafana.app/updatedTimestamp": "2025-05-01 04:18:27.121698 +0000 UTC"
+        }
+      },
+      "spec": {
+        "description": "Enables setting the auth cookie domain. Required by Grafana Panel Exporter",
+        "stage": "experimental",
+        "codeowner": "@grafana/sharing-squad"
+      }
+    },
+    {
+      "metadata": {
         "name": "panelFilterVariable",
         "resourceVersion": "1718727528075",
         "creationTimestamp": "2023-11-03T12:15:54Z"

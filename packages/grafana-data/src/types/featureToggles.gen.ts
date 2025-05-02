@@ -100,6 +100,9 @@ export interface FeatureToggles {
   pluginsAPIMetrics?: boolean;
   externalServiceAccounts?: boolean;
   panelMonitoring?: boolean;
+  panelExporterCookieDomain?: boolean;
+  panelExporterBootdataApi?: boolean;
+  panelExporter?: boolean;
   enableNativeHTTPHistogram?: boolean;
   disableClassicHTTPHistogram?: boolean;
   formatString?: boolean;

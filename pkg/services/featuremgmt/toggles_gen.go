@@ -335,6 +335,18 @@ const (
 	// Enables panel monitoring through logs and measurements
 	FlagPanelMonitoring = "panelMonitoring"
 
+	// FlagPanelExporterCookieDomain
+	// Enables setting the auth cookie domain. Required by Grafana Panel Exporter
+	FlagPanelExporterCookieDomain = "panelExporterCookieDomain"
+
+	// FlagPanelExporterBootdataApi
+	// Presents GrafanaBootData as an authenticated API endpoint. Required by Grafana Panel Exporter
+	FlagPanelExporterBootdataApi = "panelExporterBootdataApi"
+
+	// FlagPanelExporter
+	// Allows users to render Grafana Panels in external applications.
+	FlagPanelExporter = "panelExporter"
+
 	// FlagEnableNativeHTTPHistogram
 	// Enables native HTTP Histograms
 	FlagEnableNativeHTTPHistogram = "enableNativeHTTPHistogram"

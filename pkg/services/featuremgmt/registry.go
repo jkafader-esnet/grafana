@@ -615,6 +615,27 @@ var (
 			FrontendOnly: true,
 		},
 		{
+			Name:         "panelExporterCookieDomain",
+			Description:  "Enables setting the auth cookie domain. Required by Grafana Panel Exporter",
+			Stage:        FeatureStageExperimental,
+			Owner:        grafanaSharingSquad,
+		},
+		{
+			Name:         "panelExporterBootdataApi",
+			Description:  "Presents GrafanaBootData as an authenticated API endpoint. Required by Grafana Panel Exporter",
+			Stage:        FeatureStageExperimental,
+			Owner:        grafanaSharingSquad,
+		},
+		{
+			Name:	         "panelExporter",
+			Description:     "Allows users to render Grafana Panels in external applications.",
+			Stage:           FeatureStageExperimental,
+			Owner:           grafanaSharingSquad,
+			FrontendOnly:    true,
+			AllowSelfServe:  false,
+			RequiresRestart: false,
+		},
+		{
 			Name:              "enableNativeHTTPHistogram",
 			Description:       "Enables native HTTP Histograms",
 			Stage:             FeatureStageExperimental,

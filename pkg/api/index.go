@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/org"
 	pref "github.com/grafana/grafana/pkg/services/preference"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/util"
 )
 
 func (hs *HTTPServer) setIndexViewData(c *contextmodel.ReqContext) (*dtos.IndexViewData, error) {
@@ -226,6 +227,21 @@ func (hs *HTTPServer) Index(c *contextmodel.ReqContext) {
 		return
 	}
 	c.HTML(http.StatusOK, "index", data)
+}
+
+func (hs *HTTPServer) BootData(c *contextmodel.ReqContext) {
+	data, err := hs.setIndexViewData(c)
+	if err != nil {
+		c.Handle(hs.Cfg, 500, "Failed to get settings", err)
+		return
+	}
+	c.Resp.Header().Set("Access-Control-Allow-Origin", "*")
+	c.JSON(http.StatusOK, util.DynMap{
+		"user":     data.User,
+		"settings": data.Settings,
+		"navTree":  data.NavTree,
+		"assets":   data.Assets,
+	})
 }
 
 func (hs *HTTPServer) NotFoundHandler(c *contextmodel.ReqContext) {
