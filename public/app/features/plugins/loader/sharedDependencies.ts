@@ -15,7 +15,7 @@ import * as grafanaUIraw from '@grafana/ui';
 import TableModel from 'app/core/TableModel';
 import config from 'app/core/config';
 import { appEvents, contextSrv } from 'app/core/core';
-import { BackendSrv, getBackendSrv } from 'app/core/services/backend_srv';
+//import { BackendSrv, getBackendSrv } from 'app/core/services/backend_srv';
 import impressionSrv from 'app/core/services/impression_srv';
 import TimeSeries from 'app/core/time_series2';
 import { arrayMove } from 'app/core/utils/arrayMove';
@@ -68,10 +68,7 @@ export const sharedDependenciesMap = {
     appEvents: appEvents,
     contextSrv: contextSrv,
   },
-  'app/core/services/backend_srv': {
-    BackendSrv,
-    getBackendSrv,
-  },
+  'app/core/services/backend_srv': ()=> import('app/core/services/backend_srv'),
   'app/core/table_model': { default: TableModel, __useDefault: true },
   'app/core/time_series': { default: TimeSeries, __useDefault: true },
   'app/core/time_series2': { default: TimeSeries, __useDefault: true },

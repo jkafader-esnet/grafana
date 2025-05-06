@@ -19,9 +19,10 @@ const esbuildOptions = {
 
 module.exports = {
   devtool: 'source-map',
+  mode: "development",
   target: "web",
   entry: { 
-    exporter: './public/app/features/panel-exporter/exporter.ts',
+    exporter: './public/app/features/panel-exporter/exporter.tsx',
     dark: './public/sass/grafana.dark.scss',
     light: './public/sass/grafana.light.scss',
 },
@@ -102,17 +103,6 @@ module.exports = {
     // Note: order is bottom-to-top and/or right-to-left
     rules: [
       {
-        test: /\.tsx?$/,
-        use: {
-          loader: 'esbuild-loader',
-          options: esbuildOptions,
-        },
-      },
-      require('./sass.rule.js')({
-        sourceMap: false,
-        preserveUrl: true,
-      }),
-      {
         test: require.resolve('jquery'),
         loader: 'expose-loader',
         options: {
@@ -155,6 +145,22 @@ module.exports = {
           fullySpecified: false,
         },
       },
+      {
+        test: /\.tsx?$/,
+        use: {
+          loader: 'esbuild-loader',
+          options: esbuildOptions,
+        },
+      },
+      require('./sass.rule.js')({
+        sourceMap: false,
+        preserveUrl: true,
+      }),
     ],
+  },
+  // single big chunk
+  optimization: {
+    splitChunks: false,
+    runtimeChunk: false,
   }
 }
