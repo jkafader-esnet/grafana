@@ -689,7 +689,12 @@ export const TooltipPlugin2 = ({
         // it would end up re-dispatching mouseleave
         const isStaleEvent = isMobile ? false : performance.now() - event.timeStamp > 16;
 
-        !isStaleEvent && plot!.over.dispatchEvent(event);
+        try {
+          !isStaleEvent && plot!.over.dispatchEvent(event);
+        } catch(e) {
+          console.log(e);
+        }
+
       } else {
         plot!.setCursor(
           {
