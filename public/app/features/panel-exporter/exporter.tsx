@@ -40,27 +40,29 @@ import { css } from '@emotion/css';
 // Normally, window.grafanaBootData is set in index.html and
 // the 'config' system relies upon this synchronicity. Here,
 // we'll manually instantiate it instead.
-function getConfig(){
-  function checkAndResolveLater(resolve:any, reject:any, timeout:any){
-    if(timeout > 3000){ reject('Application did not load in time!') }
-    let bootData = (window as any).grafanaBootData;
-    if(!!bootData){
-      const options = bootData.settings;
-      options.bootData = bootData;
+let bootData = null;
 
-      const conf = new GrafanaBootConfig(options);
-      resolve(conf);
-    } else {
-      window.setTimeout(()=>{
-        checkAndResolveLater(resolve, reject, timeout + 100)
-      }, timeout);
+async function getConfig(redirect:boolean=true){
+
+  async function loadBootData(){
+    if(bootData) return bootData;
+    try {
+      const response = await fetch("/api/bootdata");
+      if(response.status === 401){
+        console.error("Not authenticated to get Grafana Boot Data")
+      }
+      return await response.json();
+    } catch(err) {
+      if(redirect) window.location = "/login";
     }
   }
 
-  return new Promise((resolve, reject)=>{
-    checkAndResolveLater(resolve, reject, 100);
-  })
+  bootData = await loadBootData();
 
+  const options = bootData.settings;
+  options.bootData = bootData;
+
+  return new GrafanaBootConfig(options);
 }
 
 interface AppContext {
@@ -73,8 +75,8 @@ interface AppContext {
   newAssetsChecker: any
 }
 
-const GrafContext: any = async function(dashboardUid:string){
-  let conf = await getConfig()
+const GrafContext: any = async function(dashboardUid:string, redirect:boolean=true){
+  let conf = await getConfig(redirect)
 
   if(GrafContext._appContext){
     return GrafContext._appContext;
